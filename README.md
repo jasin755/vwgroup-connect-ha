@@ -2,7 +2,7 @@
   <img src="https://raw.githubusercontent.com/its-me-prash/vwgroup-connect-ha/main/custom_components/vag_connect/logo.png" alt="VW Group Connect" width="180">
 </p>
 
-<h1 align="center">VW Group Connect</h1>
+<h1 align="center">VW Group Connect.</h1>
 
 <p align="center">
   <strong>One Home Assistant integration for Volkswagen Group cars: Audi · Volkswagen · Škoda · SEAT · CUPRA · Porsche · Bentley · VW and Audi US/Canada</strong><br>
