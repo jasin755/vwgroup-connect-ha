@@ -84,6 +84,26 @@ async def async_setup_entry(
                 and vehicle.get("auto_unlock_when_charged") is not None
             ):
                 entities.append(VagAutoUnlockPlugSwitch(coordinator, vin))
+            if (
+                _supported(vin, "command_set_companion_aux_air_conditioning")
+                and vehicle.get("climate_at_unlock") is not None
+            ):
+                entities.append(VagCompanionAuxAirConditioningSwitch(coordinator, vin))
+            if (
+                _supported(vin, "command_set_companion_automatic_window_heating")
+                and vehicle.get("window_heating_enabled") is not None
+            ):
+                entities.append(VagCompanionAutomaticWindowHeatingSwitch(coordinator, vin))
+            if (
+                _supported(vin, "command_set_companion_zone_front_left")
+                and vehicle.get("climate_zone_front_left_enabled") is not None
+            ):
+                entities.append(VagCompanionZoneSwitch(coordinator, vin, "front_left"))
+            if (
+                _supported(vin, "command_set_companion_zone_front_right")
+                and vehicle.get("climate_zone_front_right_enabled") is not None
+            ):
+                entities.append(VagCompanionZoneSwitch(coordinator, vin, "front_right"))
         return entities
 
     register_dynamic_spawner(entry, coordinator, async_add_entities, _build_for_vin)
@@ -245,6 +265,81 @@ class VagAutoUnlockPlugSwitch(VagConnectEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: object) -> None:
         await self.coordinator.async_set_auto_unlock_plug(self._vin, False)
+
+
+class VagCompanionAuxAirConditioningSwitch(VagConnectEntity, SwitchEntity):
+    """Condition briefly when the ID.3 is unlocked (app companion setting)."""
+
+    _attr_translation_key = "companion_aux_air_conditioning_switch"
+    _attr_icon = "mdi:car-door"
+    _command_id = "command_set_companion_aux_air_conditioning"
+
+    def __init__(self, coordinator: VagConnectCoordinator, vin: str) -> None:
+        super().__init__(coordinator, vin, "companion_aux_air_conditioning_switch")
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self._vehicle.get("climate_at_unlock")
+        return bool(value) if value is not None else None
+
+    async def async_turn_on(self, **kwargs: object) -> None:
+        await self.coordinator.async_set_companion_aux_air_conditioning(self._vin, True)
+
+    async def async_turn_off(self, **kwargs: object) -> None:
+        await self.coordinator.async_set_companion_aux_air_conditioning(self._vin, False)
+
+
+class VagCompanionAutomaticWindowHeatingSwitch(VagConnectEntity, SwitchEntity):
+    """Automatic window/mirror heating during companion climate runs."""
+
+    _attr_translation_key = "companion_automatic_window_heating_switch"
+    _attr_icon = "mdi:car-defrost-front"
+    _command_id = "command_set_companion_automatic_window_heating"
+
+    def __init__(self, coordinator: VagConnectCoordinator, vin: str) -> None:
+        super().__init__(
+            coordinator, vin, "companion_automatic_window_heating_switch"
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self._vehicle.get("window_heating_enabled")
+        return bool(value) if value is not None else None
+
+    async def async_turn_on(self, **kwargs: object) -> None:
+        await self.coordinator.async_set_companion_automatic_window_heating(
+            self._vin, True
+        )
+
+    async def async_turn_off(self, **kwargs: object) -> None:
+        await self.coordinator.async_set_companion_automatic_window_heating(
+            self._vin, False
+        )
+
+
+class VagCompanionZoneSwitch(VagConnectEntity, SwitchEntity):
+    """Extended-conditioning zone selected in Air Conditioning → Settings."""
+
+    _attr_icon = "mdi:car-seat-heater"
+
+    def __init__(
+        self, coordinator: VagConnectCoordinator, vin: str, zone: str
+    ) -> None:
+        super().__init__(coordinator, vin, f"companion_zone_{zone}_switch")
+        self._zone = zone
+        self._attr_translation_key = f"companion_zone_{zone}_switch"
+        self._command_id = f"command_set_companion_zone_{zone}"
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self._vehicle.get(f"climate_zone_{self._zone}_enabled")
+        return bool(value) if value is not None else None
+
+    async def async_turn_on(self, **kwargs: object) -> None:
+        await self.coordinator.async_set_companion_zone(self._vin, self._zone, True)
+
+    async def async_turn_off(self, **kwargs: object) -> None:
+        await self.coordinator.async_set_companion_zone(self._vin, self._zone, False)
 
 
 class VagWindowHeatingSwitch(VagConnectEntity, SwitchEntity):

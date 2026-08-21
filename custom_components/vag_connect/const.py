@@ -36,6 +36,10 @@ CONF_COMPANION_RATE_LIMIT_UNTIL = "companion_rate_limit_until"
 # there (a forward tap, unlike a plain screen dump); only a user who has
 # confirmed the flow on their device should turn it on.
 CONF_COMPANION_READ_CHARGE_DETAIL = "companion_read_charge_detail"
+# Personal-fork extension: opt into the confirmed ID.3 climate/settings,
+# health-report and location navigation reads. Each route is cached and runs on
+# the same 15-minute budget as the charge-detail read.
+CONF_COMPANION_READ_EXTENDED      = "companion_read_extended"
 # v2.26.0 (#974) — opt-in: wake the phone display before a poll and put it back
 # to sleep afterwards, so a locked/asleep phone shows the app (not the keyguard)
 # without needing "Stay awake" on permanently. OFF by default.

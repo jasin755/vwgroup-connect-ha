@@ -240,6 +240,11 @@ class VagConnectNumber(VagConnectEntity, NumberEntity):
     def __init__(self, coordinator: VagConnectCoordinator, vin: str, description: VagNumberDescription) -> None:
         super().__init__(coordinator, vin, description.key)
         self.entity_description = description
+        if description.key == "target_soc" and coordinator.is_companion():
+            # We Connect's ID.3 slider offers 50..100 in 10-percent steps.
+            self._attr_native_min_value = 50
+            self._attr_native_max_value = 100
+            self._attr_native_step = 10
 
     # v2.8.0 - default values for the aux heating sliders when the user
     # has not picked one yet. Mirrors the coordinator-side fallbacks in

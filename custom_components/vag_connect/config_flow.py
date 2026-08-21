@@ -2276,6 +2276,7 @@ class VagConnectOptionsFlow(config_entries.OptionsFlow):
         # in only after confirming the flow on their own device).
         from .const import (  # noqa: PLC0415
             CONF_COMPANION_READ_CHARGE_DETAIL,
+            CONF_COMPANION_READ_EXTENDED,
             CONF_COMPANION_WAKE_SLEEP,
             CONF_STRATEGY,
             STRATEGY_COMPANION_ADB,
@@ -2286,6 +2287,13 @@ class VagConnectOptionsFlow(config_entries.OptionsFlow):
                 default=current_options.get(
                     CONF_COMPANION_READ_CHARGE_DETAIL,
                     current_data.get(CONF_COMPANION_READ_CHARGE_DETAIL, False),
+                ),
+            )] = _BOOL_SELECTOR
+            schema[vol.Optional(
+                CONF_COMPANION_READ_EXTENDED,
+                default=current_options.get(
+                    CONF_COMPANION_READ_EXTENDED,
+                    current_data.get(CONF_COMPANION_READ_EXTENDED, False),
                 ),
             )] = _BOOL_SELECTOR
             schema[vol.Optional(

@@ -154,8 +154,14 @@ async def async_setup_entry(
             if coordinator.command_method_available("command_set_charge_mode"):
                 entities.append(VagChargeModeSelect(coordinator, vin))
             # v2.15.10 — Skoda-only max-charging-current select (enum plane).
-            if is_skoda and coordinator.command_method_available(
-                "command_update_charging_settings"
+            if (
+                coordinator.command_method_available(
+                    "command_update_charging_settings"
+                )
+                and (
+                    is_skoda
+                    or vehicle.get("max_charging_current") is not None
+                )
             ):
                 entities.append(VagSkodaChargeCurrentSelect(coordinator, vin))
         return entities

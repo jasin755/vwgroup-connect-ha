@@ -1022,6 +1022,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             from .const import (  # noqa: PLC0415
                 CONF_COMPANION_ADDON_TOKEN,
                 CONF_COMPANION_READ_CHARGE_DETAIL,
+                CONF_COMPANION_READ_EXTENDED,
                 CONF_COMPANION_USE_ADDON,
                 CONF_COMPANION_WAKE_SLEEP,
             )
@@ -1034,6 +1035,9 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 time_fn=time.monotonic,
                 read_charge_detail=bool(
                     self.entry.data.get(CONF_COMPANION_READ_CHARGE_DETAIL, False)
+                ),
+                read_extended=bool(
+                    self.entry.data.get(CONF_COMPANION_READ_EXTENDED, False)
                 ),
                 wake_sleep=bool(
                     self.entry.data.get(CONF_COMPANION_WAKE_SLEEP, False)
@@ -5753,6 +5757,42 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             mode="PERMANENT" if enabled else "OFF",
         )
 
+    async def async_set_companion_aux_air_conditioning(
+        self, vin: str, enabled: bool
+    ) -> None:
+        await self._cariad_cmd_optimistic(
+            vin,
+            "command_set_companion_aux_air_conditioning",
+            optimistic={
+                "climate_at_unlock": enabled,
+                "climatisation_at_unlock": enabled,
+            },
+            enabled=enabled,
+        )
+
+    async def async_set_companion_automatic_window_heating(
+        self, vin: str, enabled: bool
+    ) -> None:
+        await self._cariad_cmd_optimistic(
+            vin,
+            "command_set_companion_automatic_window_heating",
+            optimistic={"window_heating_enabled": enabled},
+            enabled=enabled,
+        )
+
+    async def async_set_companion_zone(
+        self, vin: str, zone: str, enabled: bool
+    ) -> None:
+        if zone not in {"front_left", "front_right"}:
+            raise ValueError(f"unsupported companion climate zone: {zone}")
+        method = f"command_set_companion_zone_{zone}"
+        await self._cariad_cmd_optimistic(
+            vin,
+            method,
+            optimistic={f"climate_zone_{zone}_enabled": enabled},
+            enabled=enabled,
+        )
+
     async def async_start_aux_heating(
         self,
         vin: str,
@@ -6747,4 +6787,3 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         except Exception:  # noqa: BLE001
             pass
         await self._cariad_cmd(vin, "command_wake")
-

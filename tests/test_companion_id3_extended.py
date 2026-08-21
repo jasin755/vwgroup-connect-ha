@@ -1,0 +1,294 @@
+# Copyright 2026 Prash Balan (@its-me-prash) — GNU AGPL v3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Grounded ID.3 / We Connect 4.3.2 extended companion reads."""
+from __future__ import annotations
+
+from custom_components.vag_connect.companion.presets import PRESETS
+from custom_components.vag_connect.companion.screen import parse_ui_dump, read_fields
+from custom_components.vag_connect.companion.vw_screen import (
+    parse_climate,
+    parse_climate_settings,
+    parse_shared_location,
+    parse_vehicle_health,
+    parse_vehicle_settings,
+    parse_zones,
+)
+from custom_components.vag_connect.companion.vw_driver import VolkswagenAppDriver
+
+
+def _dump(*nodes: str) -> str:
+    return '<hierarchy rotation="0">' + "".join(nodes) + "</hierarchy>"
+
+
+def _node(
+    *,
+    rid: str = "",
+    text: str = "",
+    desc: str = "",
+    bounds: str = "[0,0][100,100]",
+    clickable: bool = False,
+    checkable: bool = False,
+    checked: bool = False,
+) -> str:
+    return (
+        f'<node resource-id="{rid}" text="{text}" content-desc="{desc}" '
+        f'class="android.view.View" bounds="{bounds}" '
+        f'clickable="{str(clickable).lower()}" '
+        f'checkable="{str(checkable).lower()}" '
+        f'checked="{str(checked).lower()}" enabled="true" />'
+    )
+
+
+def test_overview_reads_lock_range_and_climate_state() -> None:
+    nodes = parse_ui_dump(
+        _dump(
+            _node(
+                desc=(
+                    "Your vehicle: ID.3 Pro Performance. Vehicle is locked. "
+                    "Synchronised 58 minutes ago"
+                )
+            ),
+            _node(desc="Range overview. Battery range: 215 kilometres. Open details"),
+            _node(desc="Climate control. Off. Open details"),
+        )
+    )
+    got = read_fields(nodes, PRESETS["volkswagen"])
+    assert got["doors_locked"] is True
+    assert got["electric_range_km"] == 215
+    assert got["climatisation_state"] == "Off"
+    assert got["climatisation_active"] is False
+
+
+def test_climate_reads_centre_target_and_outside_temperature() -> None:
+    nodes = parse_ui_dump(
+        _dump(
+            _node(rid="outside_temperature_layout", bounds="[0,895][1080,942]"),
+            _node(text="Example City: 16°C", bounds="[400,895][680,942]"),
+            _node(rid="clima_compose_view", bounds="[0,1005][1080,1341]"),
+            _node(text="21.5", bounds="[0,1032][192,1193]"),
+            _node(text="22", bounds="[412,1005][620,1220]"),
+            _node(text="22.5", bounds="[852,1032][1080,1193]"),
+            _node(rid="window_heating_description", text="Autom."),
+        )
+    )
+    assert parse_climate(nodes) == {
+        "target_temperature": 22.0,
+        "outside_temp": 16.0,
+    }
+
+
+def test_climate_preferences_and_zones_read_checked_state() -> None:
+    settings = parse_ui_dump(
+        _dump(
+            _node(
+                rid="ClimatisationAtUnlockEnabled",
+                checkable=True,
+                checked=True,
+            ),
+            _node(rid="WindowHeatingEnabled", checkable=True, checked=False),
+        )
+    )
+    assert parse_climate_settings(settings) == {
+        "climate_at_unlock": True,
+        "climatisation_at_unlock": True,
+        "window_heating_enabled": False,
+    }
+
+    zones = parse_ui_dump(
+        _dump(
+            _node(text="Front left", bounds="[55,859][240,913]"),
+            _node(
+                bounds="[0,798][1080,974]",
+                clickable=True,
+                checkable=True,
+                checked=False,
+            ),
+            _node(text="Front right", bounds="[55,1038][265,1092]"),
+            _node(
+                bounds="[0,977][1080,1153]",
+                clickable=True,
+                checkable=True,
+                checked=True,
+            ),
+        )
+    )
+    assert parse_zones(zones) == {
+        "climate_zone_front_left_enabled": False,
+        "climate_zone_front_right_enabled": True,
+    }
+
+
+def test_vehicle_settings_read_limit_and_toggle_rows() -> None:
+    nodes = parse_ui_dump(
+        _dump(
+            _node(rid="value", text="60%", bounds="[863,991][970,1045]"),
+            _node(text="Battery Care Mode", bounds="[44,1543][893,1597]"),
+            _node(
+                bounds="[44,1504][1036,1636]",
+                clickable=True,
+                checkable=True,
+                checked=True,
+            ),
+            _node(
+                text="Reduced AC charging current",
+                bounds="[44,1912][893,1966]",
+            ),
+            _node(
+                bounds="[44,1873][1036,2005]",
+                clickable=True,
+                checkable=True,
+                checked=False,
+            ),
+            _node(
+                text="Automatically release AC connector",
+                bounds="[44,2113][893,2167]",
+            ),
+            _node(
+                bounds="[44,2074][1036,2206]",
+                clickable=True,
+                checkable=True,
+                checked=False,
+            ),
+        )
+    )
+    assert parse_vehicle_settings(nodes) == {
+        "target_soc": 60,
+        "battery_care_enabled": True,
+        "max_charging_current": "MAXIMUM",
+        "auto_unlock_when_charged": False,
+    }
+
+
+def test_health_and_shared_location_are_typed() -> None:
+    health = parse_ui_dump(
+        _dump(
+            _node(text="Total distance"),
+            _node(text="51,034 km"),
+            _node(text="Next service"),
+            _node(text="77 days"),
+        )
+    )
+    assert parse_vehicle_health(health) == {
+        "odometer_km": 51034,
+        "service_due_in_days": 77,
+    }
+
+    share = parse_ui_dump(
+        _dump(
+            _node(
+                rid="content_preview_text",
+                text="https://www.google.com/maps/place/50.123456,14.654321",
+            )
+        )
+    )
+    assert parse_shared_location(share) == {
+        "latitude": 50.123456,
+        "longitude": 14.654321,
+    }
+
+
+class _DriverTransport:
+    """Small state machine for command-flow tests; never touches a real car."""
+
+    connected = True
+
+    def __init__(self) -> None:
+        self.screen = "overview"
+        self.started_climate = False
+        self.battery_care = True
+        self.target_soc = 60
+        self.taps: list[tuple[int, int]] = []
+
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def foreground_app(self, package: str) -> None:  # noqa: ARG002
+        return None
+
+    async def current_app_version(self, package: str) -> str:  # noqa: ARG002
+        return "4.3.2"
+
+    def _overview(self) -> str:
+        return _dump(
+            _node(rid="rangeTile", bounds="[50,200][450,600]"),
+            _node(rid="climateTile", bounds="[550,200][1000,600]"),
+            _node(
+                desc="Settings. Open details",
+                bounds="[50,1000][1000,1150]",
+            ),
+        )
+
+    def _climate(self) -> str:
+        return _dump(
+            _node(rid="cta_start", text="Start", bounds="[100,1000][900,1120]"),
+        )
+
+    def _settings(self) -> str:
+        return _dump(
+            _node(rid="subtitle", text="Charging up to (50-100%)", bounds="[100,300][900,360]"),
+            _node(rid="value", text=f"{self.target_soc}%", bounds="[800,420][900,480]"),
+            _node(text="Battery Care Mode", bounds="[50,600][700,660]"),
+            _node(
+                bounds="[40,560][1000,700]",
+                clickable=True,
+                checkable=True,
+                checked=self.battery_care,
+            ),
+        )
+
+    async def dump_ui(self) -> str:
+        if self.screen == "climate":
+            return self._climate()
+        if self.screen == "settings":
+            return self._settings()
+        return self._overview()
+
+    async def tap(self, x: int, y: int) -> None:
+        self.taps.append((x, y))
+        if self.screen == "overview" and x > 500 and y < 700:
+            self.screen = "climate"
+        elif self.screen == "overview" and 950 <= y <= 1200:
+            self.screen = "settings"
+        elif self.screen == "climate" and y >= 900:
+            self.started_climate = True
+        elif self.screen == "settings" and y >= 550:
+            self.battery_care = not self.battery_care
+        elif self.screen == "settings" and 350 <= y <= 550:
+            self.target_soc = round((50 + 50 * ((x - 100) / 800)) / 10) * 10
+
+    async def key_back(self) -> None:
+        self.screen = "overview"
+
+    async def swipe(
+        self,
+        x1: int,
+        y1: int,
+        x2: int,
+        y2: int,
+        dur_ms: int = 300,
+    ) -> None:  # noqa: ARG002
+        return None
+
+
+async def test_driver_starts_climate_via_detail_without_real_transport() -> None:
+    transport = _DriverTransport()
+    await VolkswagenAppDriver(transport, settle_s=0).start_climate()  # type: ignore[arg-type]
+    assert transport.started_climate is True
+    assert transport.screen == "overview"
+
+
+async def test_driver_toggles_battery_care_only_when_needed() -> None:
+    transport = _DriverTransport()
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    await driver.set_battery_care(False)
+    assert transport.battery_care is False
+    tap_count = len(transport.taps)
+    await driver.set_battery_care(False)
+    assert len(transport.taps) == tap_count + 1  # navigation only; no switch tap
+
+
+async def test_driver_sets_and_verifies_charge_limit() -> None:
+    transport = _DriverTransport()
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    await driver.set_target_soc(80)
+    assert transport.target_soc == 80

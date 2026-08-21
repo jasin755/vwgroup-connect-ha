@@ -21,7 +21,7 @@ MAX_TEMP = 30.0
 TEMP_STEP = 0.5
 
 # Climatisation state values that mean "active"
-_ACTIVE_STATES = {"HEATING", "COOLING", "VENTILATION"}
+_ACTIVE_STATES = {"ON", "ACTIVE", "HEATING", "COOLING", "VENTILATION"}
 
 
 async def async_setup_entry(
@@ -75,7 +75,7 @@ class VagClimate(VagConnectEntity, ClimateEntity):
     @property
     def hvac_mode(self) -> HVACMode:
         state = self._vehicle.get("climatisation_state")
-        if state and state in _ACTIVE_STATES:
+        if state and str(state).upper() in _ACTIVE_STATES:
             return HVACMode.HEAT_COOL
         return HVACMode.OFF
 

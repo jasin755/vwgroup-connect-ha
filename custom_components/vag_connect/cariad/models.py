@@ -481,6 +481,9 @@ class VehicleData:
     charging_type: str | None = None
     target_soc: int | None = None
     max_charge_current: float | None = None
+    # Two-level app setting used by companion/Škoda-style UIs (MAXIMUM/REDUCED),
+    # distinct from the numeric ampere limit above.
+    max_charging_current: str | None = None
     min_soc: int | None = None  # Minimum SoC for departure timer (PHEV)
     auto_unlock_charge: bool | None = None
     connector_locked: bool | None = None

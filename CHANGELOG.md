@@ -40,6 +40,15 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [Unreleased]
+
+### Added
+- **Grounded ID.3 companion reads and controls.** We Connect 4.3.2 now exposes lock state, range/SoC, climate status and target, confirmed climate preferences/zones, charging settings, odometer, next service and parking coordinates through the ADB companion. Existing HA climate, Number, Switch, Select and device-tracker entities are reused.
+- **Multi-screen companion driver.** Polls and commands are serialised, extended navigation is opt-in and cached on a 15-minute cadence, and writes remain app-version-gated with a 60-second logical-command interval.
+
+### Fixed
+- **Parsed companion EV values now create entities.** Drivetrain flags are derived from concrete screen readings, so SoC/range no longer disappear behind `has_battery = false`.
+
 ## [4.1.1] - 2026-08-21 — dashboard warning lights work again on current Audi firmware
 
 ### Fixed
@@ -2872,4 +2881,3 @@ First release candidate for v2.8.0. Bundles the five action items from the 2026-
 - Erste Version: VW EU, Audi, Škoda, SEAT, CUPRA
 - Sensoren: Akkustand, Reichweite, Kilometerstand, GPS, Türen, Fenster, Klimatisierung,
 - Services: lock, unlock, start/stop Klimatisierung, flash, wake, refresh
-

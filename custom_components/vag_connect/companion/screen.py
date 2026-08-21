@@ -42,6 +42,9 @@ class UiNode:
     clazz: str
     clickable: bool
     bounds: tuple[int, int, int, int] | None  # (l, t, r, b) in device px
+    checkable: bool = False
+    checked: bool = False
+    enabled: bool = True
 
     @property
     def tap_point(self) -> tuple[int, int] | None:
@@ -88,6 +91,9 @@ def parse_ui_dump(xml: str) -> list[UiNode]:
                 clazz=a.get("class", ""),
                 clickable=a.get("clickable", "false") == "true",
                 bounds=_parse_bounds(a.get("bounds")),
+                checkable=a.get("checkable", "false") == "true",
+                checked=a.get("checked", "false") == "true",
+                enabled=a.get("enabled", "true") == "true",
             )
         )
     return out

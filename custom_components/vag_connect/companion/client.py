@@ -39,6 +39,7 @@ class CompanionClient:
         adbkey_path: str,
         time_fn: Callable[[], float],
         read_charge_detail: bool = False,
+        read_extended: bool = False,
         wake_sleep: bool = False,
         use_addon: bool = False,
         addon_token: str = "",
@@ -64,6 +65,7 @@ class CompanionClient:
         self._channel = CompanionChannel(
             self._transport, preset, time_fn=time_fn,
             read_charge_detail=read_charge_detail,
+            read_extended=read_extended,
         )
         # Last snapshot we actually read, so a throttled poll can return the
         # known values instead of a spurious no_data that the coordinator would
@@ -150,7 +152,7 @@ class CompanionClient:
 
     # -- the command surface --------------------------------------------------
 
-    async def _dispatch(self, command_name: str) -> None:
+    async def _dispatch(self, command_name: str, **kwargs: Any) -> None:
         action = next(
             (a for a, cmd in ACTION_TO_COMMAND.items() if cmd == command_name), None
         )
@@ -162,7 +164,7 @@ class CompanionClient:
                 "this command is not available on the companion (ADB) channel",
             )
         try:
-            await self._channel.do_action(action)
+            await self._channel.do_action(action, **kwargs)
         except CompanionWriteBlocked as err:
             from ..cariad.exceptions import VehicleCommandError  # noqa: PLC0415
 
@@ -171,8 +173,31 @@ class CompanionClient:
     async def command_start_climate(self, vin: str, *_a: Any, **_k: Any) -> None:
         await self._dispatch("command_start_climate")
 
-    async def command_start_climate_control(self, vin: str, *_a: Any, **_k: Any) -> None:
-        await self._dispatch("command_start_climate")
+    async def command_start_climate_control(
+        self,
+        vin: str,
+        *,
+        temp_c: float | None = None,
+        glass_heating: bool | None = None,
+        seat_fl: bool | None = None,
+        seat_fr: bool | None = None,
+        seat_rl: bool | None = None,
+        seat_rr: bool | None = None,
+        climatisation_at_unlock: bool | None = None,
+        climatisation_mode: str | None = None,
+        **_k: Any,
+    ) -> None:
+        await self._dispatch(
+            "command_start_climate_control",
+            temp_c=temp_c,
+            glass_heating=glass_heating,
+            seat_fl=seat_fl,
+            seat_fr=seat_fr,
+            seat_rl=seat_rl,
+            seat_rr=seat_rr,
+            climatisation_at_unlock=climatisation_at_unlock,
+            climatisation_mode=climatisation_mode,
+        )
 
     async def command_stop_climate(self, vin: str, *_a: Any, **_k: Any) -> None:
         await self._dispatch("command_stop_climate")
@@ -182,6 +207,64 @@ class CompanionClient:
 
     async def command_stop_charging(self, vin: str, *_a: Any, **_k: Any) -> None:
         await self._dispatch("command_stop_charging")
+
+    async def command_set_climate_temperature(
+        self, vin: str, temp_c: float, *_a: Any, **_k: Any
+    ) -> None:
+        await self._dispatch("command_set_climate_temperature", temp_c=temp_c)
+
+    async def command_set_target_soc(
+        self, vin: str, target: int, *_a: Any, **_k: Any
+    ) -> None:
+        await self._dispatch("command_set_target_soc", target=target)
+
+    async def command_set_battery_care(
+        self, vin: str, enabled: bool, *_a: Any, **_k: Any
+    ) -> None:
+        await self._dispatch("command_set_battery_care", enabled=enabled)
+
+    async def command_set_auto_unlock_plug(
+        self, vin: str, mode: str, *_a: Any, **_k: Any
+    ) -> None:
+        await self._dispatch("command_set_auto_unlock_plug", mode=mode)
+
+    async def command_update_charging_settings(
+        self,
+        vin: str,
+        *,
+        target_soc: int | None = None,
+        max_charge_current: str | None = None,
+        auto_unlock_charge: bool | None = None,
+        **_k: Any,
+    ) -> None:
+        await self._dispatch(
+            "command_update_charging_settings",
+            target_soc=target_soc,
+            max_charge_current=max_charge_current,
+            auto_unlock_charge=auto_unlock_charge,
+        )
+
+    async def command_set_companion_aux_air_conditioning(
+        self, vin: str, enabled: bool, *_a: Any, **_k: Any
+    ) -> None:
+        await self._dispatch("command_set_companion_aux_air_conditioning", enabled=enabled)
+
+    async def command_set_companion_automatic_window_heating(
+        self, vin: str, enabled: bool, *_a: Any, **_k: Any
+    ) -> None:
+        await self._dispatch(
+            "command_set_companion_automatic_window_heating", enabled=enabled
+        )
+
+    async def command_set_companion_zone_front_left(
+        self, vin: str, enabled: bool, *_a: Any, **_k: Any
+    ) -> None:
+        await self._dispatch("command_set_companion_zone_front_left", enabled=enabled)
+
+    async def command_set_companion_zone_front_right(
+        self, vin: str, enabled: bool, *_a: Any, **_k: Any
+    ) -> None:
+        await self._dispatch("command_set_companion_zone_front_right", enabled=enabled)
 
     # -- rate-limit persistence + manual reset (delegated to the channel) ------
 

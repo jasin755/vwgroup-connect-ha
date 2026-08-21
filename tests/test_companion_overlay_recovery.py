@@ -73,15 +73,14 @@ def _channel(transport):
 
 
 def _make_writable_vw():
-    """A synthetic WRITABLE VW. The shipped VW preset quarantines writes (no
-    actions, v2.26.0); the overlay-before-tap and min-interval write mechanisms
-    still need coverage, so restore a climate action here."""
+    """A synthetic single-screen VW for generic write-safety coverage."""
     from dataclasses import replace
 
     from custom_components.vag_connect.companion.presets import ActionSelector
 
     return replace(
         PRESETS["volkswagen"],
+        driver=None,
         actions=(
             ActionSelector(
                 action="start_climate",

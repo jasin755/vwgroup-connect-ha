@@ -197,6 +197,7 @@
           "enable_reverse_geocoding": "Géocodage inverse (adresse de stationnement)",
           "read_only_mode": "Mode lecture seule",
           "companion_read_charge_detail": "Companion : lire l'objectif de charge (navigue dans l'application)",
+          "companion_read_extended": "Companion: read all confirmed ID.3 screens",
           "companion_wake_sleep": "Companion : réveiller l'écran pour interroger, puis le rendormir",
           "force_ppe_climate": "Climate Audi PPE/PPC (Q6/A6 e-tron, RS e-tron GT Facelift, A3 2024+ PHEV)",
           "enable_push_mqtt": "Mises à jour push Skoda (MQTT, EXPÉRIMENTAL)",
@@ -225,6 +226,7 @@
           "enable_reverse_geocoding": "Envoie le GPS de stationnement à OpenStreetMap Nominatim pour obtenir rue/ville. Désactivé par défaut (confidentialité).",
           "read_only_mode": "Lorsqu'activé, seuls les capteurs d'état sont créés — pas d'interrupteurs, boutons, verrous, climat ou curseurs qui envoient des commandes. Utile si vous voulez la télémétrie véhicule sans risque d'actionnement accidentel. Rechargez l'intégration après activation.",
           "companion_read_charge_detail": "Companion (ADB) uniquement. Lit aussi l'objectif de charge, la puissance et le temps restant qui se trouvent derrière l'écran de détail de la charge. Pour y accéder, l'application est PILOTÉE par appuis (environ toutes les 15 minutes) : n'activez cette option qu'après avoir vérifié que cela fonctionne sur votre téléphone. Désactivé par défaut. Rechargez l'intégration après activation.",
+          "companion_read_extended": "Companion/ID.3 only. Every 15 minutes, safely navigates the confirmed climate, vehicle settings, health report and map/share screens to read lock, climate preferences, target temperatures, charging settings, odometer, service countdown and parking coordinates. Off by default. Reload after toggling.",
           "companion_wake_sleep": "Companion (ADB) uniquement. Réveille l'écran du téléphone avant chaque interrogation et le rendort ensuite, pour qu'un téléphone verrouillé ou en veille affiche l'application pendant la lecture sans rester allumé en permanence. Désactivé par défaut. Rechargez l'intégration après activation.",
           "force_ppe_climate": "Audi uniquement. Force le nouveau format de payload PPE/PPC (climatisationMode obligatoire, targetTemperature omis) au démarrage du climat. À activer uniquement si vous possédez une Q6 e-tron, A6 e-tron, RS e-tron GT Facelift ou A3 2024+ PHEV — sinon l'API renvoie 400. Rechargez l'intégration après activation.",
           "enable_push_mqtt": "EXPÉRIMENTAL : Skoda uniquement. Active le push MQTT en temps réel depuis le backend mysmob de Skoda (nécessite les paquets Python aiomqtt + firebase-messaging — actuellement importés à la demande, non préinstallés). Phase de base en v1.18.0 ; activation en direct en attente de validation par les testeurs de la communauté. Si le push est indisponible, l'intégration bascule silencieusement sur l'interrogation périodique. Rechargez l'intégration après avoir modifié ce réglage.",
@@ -1616,6 +1618,18 @@
       },
       "auto_unlock_plug_switch": {
         "name": "Déverrouillage auto de la prise de charge"
+      },
+      "companion_aux_air_conditioning_switch": {
+        "name": "Auxiliary air conditioning at unlock"
+      },
+      "companion_automatic_window_heating_switch": {
+        "name": "Automatic window heating"
+      },
+      "companion_zone_front_left_switch": {
+        "name": "Climate zone front left"
+      },
+      "companion_zone_front_right_switch": {
+        "name": "Climate zone front right"
       },
       "active_ventilation_switch": {
         "name": "Ventilation active"

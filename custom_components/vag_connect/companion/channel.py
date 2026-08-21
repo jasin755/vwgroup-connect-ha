@@ -22,6 +22,7 @@ without sleeping or touching a device.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Callable
@@ -74,6 +75,7 @@ class CompanionChannel:
         time_fn: Callable[[], float],
         wall_clock_fn: Callable[[], float] | None = None,
         read_charge_detail: bool = False,
+        read_extended: bool = False,
     ) -> None:
         self._t = transport
         self._preset = preset
@@ -82,6 +84,7 @@ class CompanionChannel:
         # OFF by default until a user opts in (and until the flow is confirmed on
         # a real device). Off ⇒ the read path never taps forward at all.
         self._read_charge_detail = read_charge_detail
+        self._read_extended = read_extended
         # Wall clock (unix seconds) for the rate-limit backoff only, because that
         # one must be persistable across restarts; ``_now`` (monotonic) is right
         # for the in-session failure cooldown. Injected for tests.
@@ -103,6 +106,9 @@ class CompanionChannel:
         # and the values persist in between so the sensors don't flap.
         self._nav_cache: dict[str, object] = {}
         self._last_nav_at: float | None = None
+        # A scheduled poll and a user command both drive the same phone screen.
+        # Serialise them so one flow cannot steal the other's current activity.
+        self._io_lock = asyncio.Lock()
 
     @property
     def preset(self) -> BrandPreset:
@@ -213,16 +219,17 @@ class CompanionChannel:
         """
         if self._in_cooldown() or self._is_rate_limited():
             return None
-        try:
-            return await self._read_once()
-        finally:
-            # v2.26.0 (#974) — if the wake/sleep opt-in is on, put the display
-            # back to sleep after every poll that woke it (including a failed or
-            # nav-tapping one). No-op otherwise. Optional transport capability,
-            # so guard for a transport that does not implement it.
-            _sleep = getattr(self._t, "sleep_if_enabled", None)
-            if _sleep is not None:
-                await _sleep()
+        async with self._io_lock:
+            try:
+                return await self._read_once()
+            finally:
+                # v2.26.0 (#974) — if the wake/sleep opt-in is on, put the display
+                # back to sleep after every poll that woke it (including a failed or
+                # nav-tapping one). No-op otherwise. Optional transport capability,
+                # so guard for a transport that does not implement it.
+                _sleep = getattr(self._t, "sleep_if_enabled", None)
+                if _sleep is not None:
+                    await _sleep()
 
     async def _read_once(self) -> dict[str, object] | None:
         """The read body. ``read`` wraps this with the #974 sleep-after."""
@@ -299,6 +306,13 @@ class CompanionChannel:
                 )
             finally:
                 await self._return_to_overview()
+        if self._read_extended and self._preset.driver == "volkswagen_4_3_2":
+            from .vw_driver import VolkswagenAppDriver  # noqa: PLC0415
+
+            extended = await VolkswagenAppDriver(self._t).read_extended()
+            for key, val in extended.items():
+                fields[key] = val
+                self._nav_cache[key] = val
 
     async def _open_detail(self, tile: ActionSelector) -> list[UiNode] | None:
         """Tap a tile to open its detail screen and return the parsed detail.
@@ -404,7 +418,12 @@ class CompanionChannel:
 
     # -- write ----------------------------------------------------------------
 
-    async def do_action(self, action: str) -> None:
+    async def do_action(self, action: str, **kwargs: object) -> None:
+        """Serialise a logical write against any in-flight companion poll."""
+        async with self._io_lock:
+            await self._do_action_locked(action, **kwargs)
+
+    async def _do_action_locked(self, action: str, **kwargs: object) -> None:
         """Tap the control for a logical action, subject to the quarantine.
 
         Raises ``CompanionWriteBlocked`` with a clear reason rather than tapping
@@ -417,6 +436,11 @@ class CompanionChannel:
                 f"the {self._preset.brand} companion preset is experimental and "
                 "read-only; writing would risk tapping the wrong control. It "
                 "needs a confirmed screen map from a real device first."
+            )
+        if not any(spec.action == action for spec in self._preset.actions):
+            raise CompanionWriteBlocked(
+                f"the {self._preset.brand} companion preset has no confirmed "
+                f"flow for '{action}'"
             )
         # v3.0.0a1 — if no poll has decided the version gate yet (e.g. a command
         # issued right after startup, before the first scheduled read), decide
@@ -457,6 +481,21 @@ class CompanionChannel:
                     f"channel keeps at least {int(_WRITE_MIN_INTERVAL_S)}s between "
                     "commands so it never looks like abuse to the backend"
                 )
+        if self._preset.driver == "volkswagen_4_3_2":
+            from .vw_driver import (  # noqa: PLC0415
+                VW_DRIVER_ACTIONS,
+                VolkswagenAppDriver,
+            )
+
+            if action in VW_DRIVER_ACTIONS:
+                try:
+                    if not self._t.connected:
+                        await self._t.connect()
+                    await VolkswagenAppDriver(self._t).execute(action, **kwargs)
+                except CompanionTransportError as err:
+                    raise CompanionWriteBlocked(str(err)) from err
+                self._last_write_at = self._now()
+                return
         try:
             if not self._t.connected:
                 await self._t.connect()

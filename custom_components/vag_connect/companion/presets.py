@@ -51,7 +51,7 @@ class FieldSelector:
     value_from: str = "self"
     # Turns the raw on-screen text into the typed value. Defaults to a plain
     # string; the channel applies the field's own coercion on top.
-    parse: str = "str"  # str, percent, int_km, range_km, bool_charging, kw, bool_locked, bool_ignition, hm_minutes
+    parse: str = "str"  # str, percent, int_km, range_km, bool_charging, bool_climate, kw, bool_locked, bool_ignition, hm_minutes
 
 
 @dataclass(frozen=True)
@@ -120,6 +120,9 @@ class BrandPreset:
     # users on every patch. A bare string still works for the read-only brands.
     verified_app_version: str | tuple[str, ...] | None
     fields: tuple[FieldSelector, ...]
+    # Optional grounded multi-screen driver. Synthetic/test presets and the
+    # unverified brands keep using the generic single-screen action path.
+    driver: str | None = None
     actions: tuple[ActionSelector, ...] = ()
     # v2.26.0 (C9) — values behind a detail screen, read by tapping a tile and
     # reading the detail, then BACK. Gated like writes (verified + version) but
@@ -200,6 +203,7 @@ _VW = BrandPreset(
     # versionName forms ("3.64.0" / "3.63.2") that report the same UI, so a patch
     # bump no longer re-quarantines readers.
     verified_app_version=("4.3.2", "3.64.0", "3.63.2", "4.2.1"),
+    driver="volkswagen_4_3_2",
     # v2.26.0 — READ vocabulary re-grounded against ckomma/charge-app-connector-vw
     # (real-device VW app 4.2.x). The old words ("Ladezustand", "Reichweite",
     # "Zielladung") did NOT match what We Connect actually narrates in its
@@ -208,6 +212,30 @@ _VW = BrandPreset(
     # here; charge-target / power / time live behind the range tile and moved to
     # ``nav_reads`` below (that is where ckomma reads them too).
     fields=(
+        FieldSelector(
+            target="doors_locked",
+            content_desc_re=(
+                r"(?:Vehicle is|Fahrzeug ist)\s+"
+                r"(locked|unlocked|verriegelt|entriegelt)"
+            ),
+            parse="bool_locked",
+        ),
+        FieldSelector(
+            target="climatisation_state",
+            content_desc_re=(
+                r"(?:Climate control|Air conditioning|Klimatisierung)\.\s*"
+                r"(Off|On|Active|Heating|Cooling|Ventilation|Aus|Ein)"
+            ),
+            parse="str",
+        ),
+        FieldSelector(
+            target="climatisation_active",
+            content_desc_re=(
+                r"(?:Climate control|Air conditioning|Klimatisierung)\.\s*"
+                r"(Off|On|Active|Heating|Cooling|Ventilation|Aus|Ein)"
+            ),
+            parse="bool_climate",
+        ),
         FieldSelector(
             target="battery_soc",
             content_desc_re=(
@@ -261,14 +289,46 @@ _VW = BrandPreset(
             parse="int_km",
         ),
     ),
-    # v2.26.0 — WRITES QUARANTINED. The previous single-tap actions were wrong:
-    # ckomma proves We Connect needs a TWO-STEP nav (overview tile → detail
-    # screen → action button) that our do_action never did, so climate/charge
-    # commands could only ever fail with "control not found". Rather than ship
-    # command entities that never work, this preset carries NO actions (so
-    # ``writable`` is False and no command entities spawn) until the 2-step nav
-    # is confirmed on a real device. Reads are unaffected.
-    actions=(),
+    # Multi-screen writes grounded against a live ID.3 / We Connect 4.3.2.
+    # ``VolkswagenAppDriver`` executes and verifies the navigation; these specs
+    # are the explicit allow-list that keeps every other command quarantined.
+    actions=(
+        ActionSelector(action="start_climate", resource_id="cta_start"),
+        ActionSelector(action="stop_climate", label_re=r"^Stop$"),
+        ActionSelector(action="start_charging", label_re=r"^Start charging"),
+        ActionSelector(action="stop_charging", label_re=r"^Stop charging"),
+        ActionSelector(action="start_climate_control", resource_id="cta_start"),
+        ActionSelector(
+            action="set_climate_temperature",
+            resource_id="clima_compose_view",
+        ),
+        ActionSelector(action="set_target_soc", resource_id="value"),
+        ActionSelector(
+            action="set_battery_care",
+            label_re=r"^Battery Care Mode$",
+        ),
+        ActionSelector(
+            action="set_auto_unlock_plug",
+            label_re=r"^Automatically release AC connector$",
+        ),
+        ActionSelector(
+            action="update_charging_settings",
+            label_re=(
+                r"^(?:Charging up to|Reduced AC charging current|"
+                r"Automatically release)"
+            ),
+        ),
+        ActionSelector(
+            action="set_auxiliary_at_unlock",
+            resource_id="ClimatisationAtUnlockEnabled",
+        ),
+        ActionSelector(
+            action="set_automatic_window_heating",
+            resource_id="WindowHeatingEnabled",
+        ),
+        ActionSelector(action="set_zone_front_left", label_re=r"^Front left$"),
+        ActionSelector(action="set_zone_front_right", label_re=r"^Front right$"),
+    ),
     # v2.26.0 (C9) — charge target / power / remaining-time live behind the
     # range tile (ckomma's set_charging taps range_tile_center to reach the
     # charge detail, then reads exactly these). Gated like a write (verified +
@@ -546,6 +606,12 @@ def coerce(parse: str, raw: str | None) -> object | None:
         return val
     if parse == "bool_charging":
         return bool(re.search(r"(?:Lädt|Wird geladen|Charging)", raw, re.I))
+    if parse == "bool_climate":
+        if re.search(r"(?:\boff\b|stopped|inactive|aus)", raw, re.I):
+            return False
+        if re.search(r"(?:\bon\b|active|heating|cooling|ventilation|ein)", raw, re.I):
+            return True
+        return None
     if parse == "kw":
         m = re.search(r"(\d+(?:[.,]\d+)?)", raw)
         return float(m.group(1).replace(",", ".")) if m else None
@@ -591,6 +657,16 @@ def coerce(parse: str, raw: str | None) -> object | None:
 ACTION_TO_COMMAND: dict[str, str] = {
     "start_climate": "command_start_climate",
     "stop_climate": "command_stop_climate",
+    "start_climate_control": "command_start_climate_control",
+    "set_climate_temperature": "command_set_climate_temperature",
+    "set_target_soc": "command_set_target_soc",
+    "set_battery_care": "command_set_battery_care",
+    "set_auto_unlock_plug": "command_set_auto_unlock_plug",
+    "update_charging_settings": "command_update_charging_settings",
+    "set_auxiliary_at_unlock": "command_set_companion_aux_air_conditioning",
+    "set_automatic_window_heating": "command_set_companion_automatic_window_heating",
+    "set_zone_front_left": "command_set_companion_zone_front_left",
+    "set_zone_front_right": "command_set_companion_zone_front_right",
     "start_charging": "command_start_charging",
     "stop_charging": "command_stop_charging",
 }

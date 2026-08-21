@@ -156,6 +156,7 @@ def _writable_vw():
 
     return replace(
         PRESETS["volkswagen"],
+        driver=None,
         actions=(
             ActionSelector(
                 action="start_climate",
@@ -190,19 +191,15 @@ class TestWriteQuarantine:
         assert t.taps == [(100, 230)]
 
     @pytest.mark.asyncio
-    async def test_shipped_vw_quarantines_writes_but_still_reads(self) -> None:
-        # v2.26.0 — the real VW preset carries NO actions (writes quarantined
-        # until the 2-step nav is confirmed), but a verified matching version
-        # still reads AND may nav-read.
+    async def test_shipped_vw_enables_grounded_writes_and_still_reads(self) -> None:
+        # The ID.3 / We Connect 4.3.2 multi-screen map is grounded, so a matching
+        # app version enables its explicit write allow-list alongside reads.
         now, _ = _clock()
         t = _FakeTransport(version="4.2.1", dump=VW_SCREEN)
         ch = CompanionChannel(t, PRESETS["volkswagen"], time_fn=now)
         fields = await ch.read()
         assert fields["battery_soc"] == 74
-        assert ch.writes_enabled is False
-        with pytest.raises(CompanionWriteBlocked):
-            await ch.do_action("start_climate")
-        assert t.taps == []
+        assert ch.writes_enabled is True
 
     @pytest.mark.asyncio
     async def test_version_drift_disables_writes_but_not_reads(self) -> None:
@@ -457,8 +454,8 @@ class TestCoordinatorGuards:
         assert c.command_method_available("command_lock") is False
         assert c.command_method_available("command_flash") is False
         assert c.command_method_available("command_wake") is False
-        assert c.command_method_available("command_set_target_soc") is False
-        assert c.command_method_available("command_set_climate_temperature") is False
+        assert c.command_method_available("command_set_target_soc") is True
+        assert c.command_method_available("command_set_climate_temperature") is True
 
     def test_b1_present_command_method_reported_available(self) -> None:
         # climate + charge ARE implemented by the companion adapter.
@@ -478,12 +475,11 @@ class TestCoordinatorGuards:
         c = self._coord(brand="audi", client=self._companion_client("audi"))
         assert c.is_read_only() is True
 
-    def test_s1_verified_vw_writes_quarantined_is_read_only(self) -> None:
-        # v2.26.0 — VW reads are verified but WRITES are quarantined (no actions
-        # until the 2-step nav is confirmed on a device), so the companion entry
-        # is read-only for now: no command entities spawn.
+    def test_s1_verified_vw_grounded_writes_are_not_read_only(self) -> None:
+        # A verified app version plus the grounded ID.3 write allow-list creates
+        # command entities; unverified brands remain read-only below.
         c = self._coord(brand="volkswagen", client=self._companion_client("volkswagen"))
-        assert c.is_read_only() is True
+        assert c.is_read_only() is False
 
 
 # ── preset integrity ────────────────────────────────────────────────────────
