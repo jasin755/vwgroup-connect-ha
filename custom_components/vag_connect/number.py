@@ -19,6 +19,7 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -169,6 +170,14 @@ async def async_setup_entry(
 ) -> None:
     """Set up number entities. v1.25.0 PR-C: dynamic listener spawn."""
     coordinator: VagConnectCoordinator = entry.runtime_data
+    if coordinator.is_companion():
+        registry = er.async_get(hass)
+        for vin in coordinator.vehicles:
+            entity_id = registry.async_get_entity_id(
+                "number", DOMAIN, f"{vin}_target_temperature"
+            )
+            if entity_id is not None:
+                registry.async_remove(entity_id)
     # v2.23.0 (#847) — the poll-interval slider is account-scoped (not per-VIN)
     # and useful to EVERY user, so create it BEFORE the read-only short-circuit
     # below: read-only / portal users are exactly the ones who want to tune how
@@ -202,6 +211,10 @@ async def async_setup_entry(
         entities: list = []
         has_battery = vehicle.get("has_battery", False)
         for desc in NUMBER_DESCRIPTIONS:
+            if coordinator.is_companion() and desc.key == "target_temperature":
+                # The companion ClimateEntity already owns both HVAC on/off and
+                # target temperature; a second Number is duplicate UI.
+                continue
             if desc.condition == "electric" and not has_battery:
                 continue
             if desc.condition == "auxheat" and not auxheat_supported_brand:
