@@ -37,6 +37,10 @@ CLEAN = _dump(
     '<node content-desc="Klimatisierung starten" text="Klima" '
     'class="android.widget.Button" clickable="true" bounds="[0,200][200,260]" />'
 )
+CLEAN_STOP = _dump(
+    '<node content-desc="Stop climate" text="Stop" '
+    'class="android.widget.Button" clickable="true" bounds="[0,200][200,260]" />'
+)
 
 
 class _SeqTransport:
@@ -85,6 +89,10 @@ def _make_writable_vw():
             ActionSelector(
                 action="start_climate",
                 content_desc_re=r"(?:Klima\w*\s*(?:starten|ein)|Start climate)",
+            ),
+            ActionSelector(
+                action="stop_climate",
+                content_desc_re=r"(?:Klima\w*\s*stoppen|Stop climate)",
             ),
         ),
     )
@@ -184,3 +192,13 @@ class TestWriteMinInterval:
         t["v"] += _WRITE_MIN_INTERVAL_S + 1
         await ch.do_action("start_climate")
         assert len(tr.taps) == 2
+
+    @pytest.mark.asyncio
+    async def test_stop_is_never_blocked_by_debounce(self) -> None:
+        now, _ = self._clock()
+        tr = _SeqTransport([CLEAN_STOP])
+        ch = CompanionChannel(tr, _WRITABLE_VW, time_fn=now)
+        ch._version_ok = True
+        ch._last_write_at = now()
+        await ch.do_action("stop_climate")
+        assert tr.taps == [(100, 230)]

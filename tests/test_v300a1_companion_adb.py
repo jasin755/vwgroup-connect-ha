@@ -74,7 +74,7 @@ class TestScreenParsing:
         assert fields["battery_soc"] == 74
         assert fields["electric_range_km"] == 312
         assert fields["is_charging"] is True
-        assert "Wird geladen" in str(fields["charging_state"])
+        assert fields["charging_state"] == "CHARGING"
 
     def test_partial_screen_yields_only_what_matched(self) -> None:
         # No range node → range simply absent, never a spurious None/0.

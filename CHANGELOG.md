@@ -44,10 +44,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ### Added
 - **Grounded ID.3 companion reads and controls.** We Connect 4.3.2 now exposes lock state, range/SoC, climate status and target, confirmed climate preferences/zones, charging settings, odometer, next service and parking coordinates through the ADB companion. Existing HA climate, Number, Switch, Select and device-tracker entities are reused.
-- **Multi-screen companion driver.** Polls and commands are serialised, extended navigation is opt-in and cached on a 15-minute cadence, and writes remain app-version-gated with a 60-second logical-command interval.
+- **Multi-screen companion driver.** Polls and commands are serialised, extended navigation is opt-in and cached on a 15-minute cadence, writes are app-version-gated, duplicate taps are debounced and immediate stop commands are never blocked.
 
 ### Fixed
 - **Parsed companion EV values now create entities.** Drivetrain flags are derived from concrete screen readings, so SoC/range no longer disappear behind `has_battery = false`.
+- **Extended companion options rebuild the client.** Enabling charge/ID.3 navigation now reloads the constructor-configured client instead of refreshing the old instance, which left target temperature, charge target and GPS unknown.
+- **ID.3 controls follow the real app behaviour.** Temperature uses verified horizontal swipes, climate/charging stop bypasses debounce, and a target-reached charging request is treated as already enabled instead of looking for a nonexistent Start button.
 
 ## [4.1.1] - 2026-08-21 — dashboard warning lights work again on current Audi firmware
 

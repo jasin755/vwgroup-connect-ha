@@ -46,12 +46,13 @@ redacts the coordinate values from logs.
 | Auto-release connector | Existing auto-unlock switch | Vehicle Settings labelled switch |
 
 Write flows are version-gated, serialised against polls, verify toggle/slider
-state after a tap, and keep at least 60 seconds between logical commands. Tests
+state after a tap, debounce duplicate logical commands, and never block an
+immediate climate/charging stop. Tests
 exercise them through a simulated transport. They have deliberately not been
 actuated against the live car during read-only mapping; live validation should
 change one reversible setting at a time and restore it afterwards.
 
-The target-temperature driver allows one 0.5 °C step per command. Rich climate
-payloads cannot change several preferences and start climate in one call; use
-the individual setting entities first. These restrictions preserve the existing
-anti-rate-limit safety contract.
+Rich climate payloads cannot change several preferences and start climate in
+one call; use the individual setting entities first. This keeps a multi-setting
+service from producing an uncontrolled burst while normal UI adjustments remain
+usable.

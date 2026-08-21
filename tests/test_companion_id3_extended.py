@@ -3,8 +3,14 @@
 """Grounded ID.3 / We Connect 4.3.2 extended companion reads."""
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
 from custom_components.vag_connect.companion.presets import PRESETS
-from custom_components.vag_connect.companion.screen import parse_ui_dump, read_fields
+from custom_components.vag_connect.companion.screen import (
+    parse_ui_dump,
+    read_fields,
+    read_selectors,
+)
 from custom_components.vag_connect.companion.vw_screen import (
     parse_climate,
     parse_climate_settings,
@@ -187,6 +193,23 @@ def test_health_and_shared_location_are_typed() -> None:
     }
 
 
+def test_target_reached_is_enabled_but_not_actively_charging() -> None:
+    detail = parse_ui_dump(
+        _dump(
+            _node(
+                desc=(
+                    "Stop charging. Target charge level reached. "
+                    "Currently not charging."
+                )
+            )
+        )
+    )
+    nav = PRESETS["volkswagen"].nav_reads[0]
+    got = read_selectors(detail, nav.values)
+    assert got["charging_state"] == "TARGET_REACHED"
+    assert got["is_charging"] is False
+
+
 class _DriverTransport:
     """Small state machine for command-flow tests; never touches a real car."""
 
@@ -197,6 +220,7 @@ class _DriverTransport:
         self.started_climate = False
         self.battery_care = True
         self.target_soc = 60
+        self.temperature = 22.0
         self.taps: list[tuple[int, int]] = []
 
     async def connect(self) -> None:
@@ -220,6 +244,19 @@ class _DriverTransport:
 
     def _climate(self) -> str:
         return _dump(
+            _node(rid="clima_compose_view", bounds="[0,200][1080,600]"),
+            _node(
+                text=f"{self.temperature - 0.5:g}",
+                bounds="[0,250][200,500]",
+            ),
+            _node(
+                text=f"{self.temperature:g}",
+                bounds="[420,220][660,520]",
+            ),
+            _node(
+                text=f"{self.temperature + 0.5:g}",
+                bounds="[880,250][1080,500]",
+            ),
             _node(rid="cta_start", text="Start", bounds="[100,1000][900,1120]"),
         )
 
@@ -267,6 +304,8 @@ class _DriverTransport:
         y2: int,
         dur_ms: int = 300,
     ) -> None:  # noqa: ARG002
+        if self.screen == "climate":
+            self.temperature += 0.5 if x1 > x2 else -0.5
         return None
 
 
@@ -292,3 +331,33 @@ async def test_driver_sets_and_verifies_charge_limit() -> None:
     driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
     await driver.set_target_soc(80)
     assert transport.target_soc == 80
+
+
+async def test_driver_swipes_temperature_until_target() -> None:
+    transport = _DriverTransport()
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    await driver.set_temperature(23.5)
+    assert transport.temperature == 23.5
+    assert transport.screen == "overview"
+
+
+async def test_extended_option_rebuilds_companion_client() -> None:
+    from custom_components.vag_connect import _async_update_listener
+    from custom_components.vag_connect.const import CONF_COMPANION_READ_EXTENDED
+
+    hass = MagicMock()
+    hass.config_entries.async_reload = AsyncMock()
+    entry = MagicMock()
+    entry.entry_id = "entry-id"
+    entry.runtime_data = None
+    entry.data = {CONF_COMPANION_READ_EXTENDED: False}
+    entry.options = {CONF_COMPANION_READ_EXTENDED: True}
+
+    await _async_update_listener(hass, entry)
+
+    hass.config_entries.async_update_entry.assert_called_once_with(
+        entry,
+        data={CONF_COMPANION_READ_EXTENDED: True},
+        options={},
+    )
+    hass.config_entries.async_reload.assert_awaited_once_with("entry-id")

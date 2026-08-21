@@ -28,7 +28,15 @@ from homeassistant.exceptions import (
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
-from .const import DOMAIN, CONF_BRAND, CONF_USERNAME, CONF_PASSWORD
+from .const import (
+    CONF_BRAND,
+    CONF_COMPANION_READ_CHARGE_DETAIL,
+    CONF_COMPANION_READ_EXTENDED,
+    CONF_COMPANION_WAKE_SLEEP,
+    CONF_PASSWORD,
+    CONF_USERNAME,
+    DOMAIN,
+)
 from .coordinator import VagConnectCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -1078,8 +1086,17 @@ async def _async_update_listener(
     """
     coordinator: VagConnectCoordinator | None = getattr(entry, "runtime_data", None)
 
-    # Fields that require a full reload (new auth client needed)
-    _RELOAD_KEYS = {CONF_BRAND, CONF_USERNAME, CONF_PASSWORD}
+    # Fields that require a full reload (new auth/companion client needed).
+    # Companion navigation flags are constructor arguments; a soft refresh of
+    # the old client silently ignored them and left extended entities unknown.
+    _RELOAD_KEYS = {
+        CONF_BRAND,
+        CONF_USERNAME,
+        CONF_PASSWORD,
+        CONF_COMPANION_READ_CHARGE_DETAIL,
+        CONF_COMPANION_READ_EXTENDED,
+        CONF_COMPANION_WAKE_SLEEP,
+    }
     options: dict = dict(entry.options) if entry.options else {}
 
     changed = {
@@ -1089,6 +1106,8 @@ async def _async_update_listener(
 
     if changed:
         _LOGGER.info("VW Group Connect: config changed (%s) — reloading", changed)
+        reload_data: dict = {**dict(entry.data), **options}
+        hass.config_entries.async_update_entry(entry, data=reload_data, options={})
         await hass.config_entries.async_reload(entry.entry_id)
     else:
         # Soft update: merge options into entry data so coordinator picks them up

@@ -172,7 +172,11 @@ class VagChargingSwitch(VagConnectEntity, SwitchEntity):
         state = self._vehicle.get("charging_state")
         if state is None:
             return None
-        return str(state).lower() in ("charging", "conservationcharging")
+        return str(state).lower() in (
+            "charging",
+            "conservationcharging",
+            "target_reached",
+        )
 
     async def async_turn_on(self, **kwargs: object) -> None:
         await self.coordinator.async_start_charging(self._vin)

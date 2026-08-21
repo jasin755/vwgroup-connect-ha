@@ -48,8 +48,8 @@ _MAX_COOLDOWN_S = 6 * 3600.0       # doubles per consecutive failure up to 6 h,
                                    # so a phone that is off does not get retried
                                    # every 30 min forever (ckomma #16)
 _OVERLAY_MAX_DISMISS = 3            # BACK presses before giving up on a nag screen
-_WRITE_MIN_INTERVAL_S = 60.0       # min gap between taps, so we never drive into
-                                   # a backend rate-limit / lockout (ckomma #21)
+_WRITE_MIN_INTERVAL_S = 2.0        # debounce duplicate HA taps without making a
+                                   # safety stop wait behind a long cooldown
 _RATE_LIMIT_BACKOFF_S = 12 * 3600  # 12 h after a rate-limit banner. Uses wall
                                    # clock so it can be PERSISTED across restarts
                                    # (ckomma #21: an account lockout must NOT be
@@ -473,7 +473,8 @@ class CompanionChannel:
         # v2.26.0 (ckomma #21) — enforce a minimum gap between taps so a rapid
         # repeat (a stuck automation, a double press) can never drive the account
         # into a backend rate-limit or lockout.
-        if self._last_write_at is not None:
+        stop_action = action in {"stop_climate", "stop_charging"}
+        if self._last_write_at is not None and not stop_action:
             since = self._now() - self._last_write_at
             if since < _WRITE_MIN_INTERVAL_S:
                 raise CompanionWriteBlocked(

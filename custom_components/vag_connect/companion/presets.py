@@ -51,7 +51,7 @@ class FieldSelector:
     value_from: str = "self"
     # Turns the raw on-screen text into the typed value. Defaults to a plain
     # string; the channel applies the field's own coercion on top.
-    parse: str = "str"  # str, percent, int_km, range_km, bool_charging, bool_climate, kw, bool_locked, bool_ignition, hm_minutes
+    parse: str = "str"  # str, percent, int_km, range_km, charging_state, bool_charging_status, bool_climate, kw, bool_locked, bool_ignition, hm_minutes
 
 
 @dataclass(frozen=True)
@@ -270,12 +270,12 @@ _VW = BrandPreset(
                 r"|Ladekabel|Connect(?:ing)?\s*(?:the\s*)?charging cable"
                 r"|Vollständig geladen|Fully charged|Bereit|Ready)"
             ),
-            parse="str",
+            parse="charging_state",
         ),
         FieldSelector(
             target="is_charging",
             content_desc_re=r"(?:Wird geladen|Lädt|Charging)",
-            parse="bool_charging",
+            parse="bool_charging_status",
         ),
         # v2.26.0 (ckomma #7) — odometer. Grouped-thousands safe now (_first_int).
         FieldSelector(
@@ -386,6 +386,24 @@ _VW = BrandPreset(
                         r"|(?:noch|remaining)\s*\d)"
                     ),
                     parse="hm_minutes",
+                ),
+                FieldSelector(
+                    target="charging_state",
+                    content_desc_re=(
+                        r"(?:Start charging|Stop charging)\.\s*"
+                        r"(Target charge level reached|Currently not charging|"
+                        r"Currently charging|Charging)"
+                    ),
+                    parse="charging_state",
+                ),
+                FieldSelector(
+                    target="is_charging",
+                    content_desc_re=(
+                        r"(?:Start charging|Stop charging)\.\s*"
+                        r"(Target charge level reached|Currently not charging|"
+                        r"Currently charging|Charging)"
+                    ),
+                    parse="bool_charging_status",
                 ),
             ),
         ),
@@ -606,6 +624,17 @@ def coerce(parse: str, raw: str | None) -> object | None:
         return val
     if parse == "bool_charging":
         return bool(re.search(r"(?:Lädt|Wird geladen|Charging)", raw, re.I))
+    if parse == "charging_state":
+        if re.search(r"target charge level reached|fully charged", raw, re.I):
+            return "TARGET_REACHED"
+        if re.search(r"not charging|not connected|nicht verbunden", raw, re.I):
+            return "NOT_CHARGING"
+        if re.search(r"charging|wird geladen|lädt", raw, re.I):
+            return "CHARGING"
+        return raw
+    if parse == "bool_charging_status":
+        state = coerce("charging_state", raw)
+        return state == "CHARGING" if state is not None else None
     if parse == "bool_climate":
         if re.search(r"(?:\boff\b|stopped|inactive|aus)", raw, re.I):
             return False

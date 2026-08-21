@@ -165,7 +165,27 @@ class VolkswagenAppDriver:
         nodes = await self.ensure_overview()
         await self._tap_rid(nodes, "rangeTile")
         detail = await self._nodes()
-        await self._tap_desc(detail, rf"^{re.escape(label)}")
+        button = find_by_desc(detail, rf"^{re.escape(label)}")
+        if button is None and label == "Start charging":
+            # The app keeps the charging request enabled after the target is
+            # reached and therefore only offers Stop. Turning the HA switch on
+            # again is already satisfied and must be a no-op, not an error.
+            already_enabled = find_by_desc(
+                detail,
+                r"^Stop charging\..*Target charge level reached",
+            )
+            if already_enabled is not None:
+                await self.ensure_overview()
+                return
+        if button is None and label == "Stop charging":
+            already_stopped = find_by_desc(
+                detail,
+                r"^Start charging\..*(?:not charging|not connected)",
+            )
+            if already_stopped is not None:
+                await self.ensure_overview()
+                return
+        await self._tap(button, reason=f"{label} button")
         await self.ensure_overview()
 
     async def start_charging(self) -> None:
@@ -206,23 +226,36 @@ class VolkswagenAppDriver:
         if not 16 <= target <= 30:
             raise CompanionTransportError("Volkswagen app: temperature must be 16-30 °C")
         nodes = await self._open_climate()
-        current, values = self._temperature_nodes(nodes)
-        if current == target:
-            await self.ensure_overview()
-            return
-        if abs(current - target) > 0.5:
-            raise CompanionTransportError(
-                "Volkswagen app: change temperature by one 0.5 °C step per "
-                "command so the app is not rate-limited"
-            )
-        node = next((node for value, node in values if value == target), None)
-        await self._tap(node, reason=f"temperature {target:g}")
-        actual, _ = self._temperature_nodes(await self._nodes())
-        if actual != target:
-            raise CompanionTransportError(
-                f"Volkswagen app: temperature stayed at {actual:g} °C"
-            )
-        await self.ensure_overview()
+        for _ in range(30):
+            current, _ = self._temperature_nodes(nodes)
+            if current == target:
+                await self.ensure_overview()
+                return
+            container = find_by_rid(nodes, "clima_compose_view")
+            if container is None or container.bounds is None:
+                raise CompanionTransportError(
+                    "Volkswagen app: temperature picker missing"
+                )
+            left, top, right, bottom = container.bounds
+            y = (top + bottom) // 2
+            width = right - left
+            if target > current:
+                x1, x2 = round(left + width * 0.72), round(left + width * 0.28)
+            else:
+                x1, x2 = round(left + width * 0.28), round(left + width * 0.72)
+            await self._t.swipe(x1, y, x2, y, 350)
+            await self._settle()
+            nodes = await self._nodes()
+            updated, _ = self._temperature_nodes(nodes)
+            moved_correctly = updated > current if target > current else updated < current
+            if not moved_correctly:
+                raise CompanionTransportError(
+                    f"Volkswagen app: temperature swipe moved {current:g} → "
+                    f"{updated:g} °C in the wrong direction"
+                )
+        raise CompanionTransportError(
+            f"Volkswagen app: temperature did not reach {target:g} °C"
+        )
 
     async def _open_climate_settings(self) -> list[UiNode]:
         detail = await self._open_climate()
