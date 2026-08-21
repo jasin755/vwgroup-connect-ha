@@ -5,8 +5,10 @@
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .const import DOMAIN
 from .coordinator import VagConnectCoordinator
 from .entity_base import VagConnectEntity, register_dynamic_spawner
 
@@ -23,6 +25,18 @@ async def async_setup_entry(
         return
     client = coordinator._cariad_client
 
+    if coordinator.is_companion():
+        # Older fork builds exposed both a climate entity and a duplicate
+        # climatisation switch for the same app button. Remove the stale
+        # registry entries when the companion switch platform reloads.
+        registry = er.async_get(hass)
+        for vin in coordinator.vehicles:
+            entity_id = registry.async_get_entity_id(
+                "switch", DOMAIN, f"{vin}_climatisation_switch"
+            )
+            if entity_id is not None:
+                registry.async_remove(entity_id)
+
     def _supported(vin: str, command_id: str) -> bool:
         cap_supported = coordinator.command_capability_supported(vin, command_id) is not False
         client_has_method = client is not None and hasattr(client, command_id)
@@ -32,7 +46,9 @@ async def async_setup_entry(
         entities: list = []
         if _supported(vin, "command_lock"):
             entities.append(VagLockSwitch(coordinator, vin))
-        if _supported(vin, "command_start_climate"):
+        # Companion exposes the richer ClimateEntity; avoid a second on/off
+        # switch controlling the same app button.
+        if _supported(vin, "command_start_climate") and not coordinator.is_companion():
             entities.append(VagClimatisationSwitch(coordinator, vin))
         if _supported(vin, "command_start_window_heating"):
             entities.append(VagWindowHeatingSwitch(coordinator, vin))

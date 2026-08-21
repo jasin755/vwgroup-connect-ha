@@ -47,12 +47,9 @@ class TestStaleDumpFileGuard:
         })
         t = _transport(dev)
         await t.dump_ui()
-        rm_idx = next(i for i, c in enumerate(dev.calls) if c.startswith("rm -f"))
-        dump_idx = next(i for i, c in enumerate(dev.calls) if "uiautomator dump" in c)
-        cat_idx = next(i for i, c in enumerate(dev.calls) if c.startswith("cat "))
-        assert rm_idx < dump_idx < cat_idx, (
-            "the stale dump must be removed BEFORE the new dump and cat"
-        )
+        assert len(dev.calls) == 1
+        command = dev.calls[0]
+        assert command.index("rm -f") < command.index("uiautomator dump") < command.index("cat ")
 
     @pytest.mark.asyncio
     async def test_failed_dump_yields_no_data_not_stale(self) -> None:

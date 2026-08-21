@@ -50,6 +50,7 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 - **Parsed companion EV values now create entities.** Drivetrain flags are derived from concrete screen readings, so SoC/range no longer disappear behind `has_battery = false`.
 - **Extended companion options rebuild the client.** Enabling charge/ID.3 navigation now reloads the constructor-configured client instead of refreshing the old instance, which left target temperature, charge target and GPS unknown.
 - **ID.3 controls follow the real app behaviour.** Temperature uses verified horizontal swipes, climate/charging stop bypasses debounce, and a target-reached charging request is treated as already enabled instead of looking for a nonexistent Start button.
+- **Companion state now reaches HA immediately and reads faster.** Temperature/charge-limit commands update the coordinator optimistically, extended reads automatically follow the charge-detail opt-in, the duplicate climate switch is removed, and each UI dump uses one ADB round-trip instead of three. The grounded live ID.3 full read dropped from roughly 94 s to 68 s.
 
 ## [4.1.1] - 2026-08-21 — dashboard warning lights work again on current Audi firmware
 

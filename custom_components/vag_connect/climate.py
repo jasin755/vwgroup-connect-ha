@@ -86,7 +86,7 @@ class VagClimate(VagConnectEntity, ClimateEntity):
     @property
     def target_temperature(self) -> float | None:
         t = self._vehicle.get("target_temperature")
-        return float(t) if t is not None else DEFAULT_TEMP
+        return float(t) if t is not None else None
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         if hvac_mode == HVACMode.HEAT_COOL:

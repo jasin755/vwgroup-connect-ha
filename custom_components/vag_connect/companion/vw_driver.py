@@ -31,10 +31,11 @@ class VolkswagenAppDriver:
         self,
         transport: NetworkAdbTransport,
         *,
-        settle_s: float = 1.0,
+        settle_s: float = 0.25,
     ) -> None:
         self._t = transport
         self._settle_s = settle_s
+        self._foregrounded = False
 
     async def _settle(self) -> None:
         if self._settle_s:
@@ -60,7 +61,9 @@ class VolkswagenAppDriver:
 
     async def ensure_overview(self) -> list[UiNode]:
         """Return to the vehicle overview without assuming the current screen."""
-        await self._t.foreground_app("com.volkswagen.weconnect")
+        if not self._foregrounded:
+            await self._t.foreground_app("com.volkswagen.weconnect")
+            self._foregrounded = True
         for _ in range(6):
             nodes = await self._nodes()
             if find_by_rid(nodes, "rangeTile") and find_by_rid(nodes, "climateTile"):
@@ -80,26 +83,46 @@ class VolkswagenAppDriver:
         return await self._nodes()
 
     async def _read_climate(self) -> dict[str, object]:
-        nodes = await self.ensure_overview()
-        await self._tap_rid(nodes, "climateTile")
-        detail = await self._nodes()
-        out = parse_climate(detail)
-        await self._tap_rid(detail, "clima_settings_compose_view")
-        settings = await self._nodes()
-        out.update(parse_climate_settings(settings))
-        await self._tap_text(settings, r"^Zones$")
-        out.update(parse_zones(await self._nodes()))
-        return out
+        depth = 0
+        try:
+            nodes = await self.ensure_overview()
+            await self._tap_rid(nodes, "climateTile")
+            depth = 1
+            detail = await self._nodes()
+            out = parse_climate(detail)
+            await self._tap_rid(detail, "clima_settings_compose_view")
+            depth = 2
+            settings = await self._nodes()
+            out.update(parse_climate_settings(settings))
+            await self._tap_text(settings, r"^Zones$")
+            depth = 3
+            out.update(parse_zones(await self._nodes()))
+            return out
+        finally:
+            for _ in range(depth):
+                await self._t.key_back()
 
     async def _read_vehicle_settings(self) -> dict[str, object]:
-        nodes = await self._overview_scrolled()
-        await self._tap_desc(nodes, r"^Settings\. Open details$")
-        return parse_vehicle_settings(await self._nodes())
+        opened = False
+        try:
+            nodes = await self._overview_scrolled()
+            await self._tap_desc(nodes, r"^Settings\. Open details$")
+            opened = True
+            return parse_vehicle_settings(await self._nodes())
+        finally:
+            if opened:
+                await self._t.key_back()
 
     async def _read_health(self) -> dict[str, object]:
-        nodes = await self._overview_scrolled()
-        await self._tap_desc(nodes, r"^Vehicle Health Report\. Open details$")
-        return parse_vehicle_health(await self._nodes())
+        opened = False
+        try:
+            nodes = await self._overview_scrolled()
+            await self._tap_desc(nodes, r"^Vehicle Health Report\. Open details$")
+            opened = True
+            return parse_vehicle_health(await self._nodes())
+        finally:
+            if opened:
+                await self._t.key_back()
 
     async def _read_location(self) -> dict[str, object]:
         nodes = await self.ensure_overview()

@@ -803,13 +803,13 @@ class TestClimateExtended:
         assert HVACMode.HEAT_COOL in c.hvac_modes
         assert HVACMode.OFF in c.hvac_modes
 
-    def test_target_temperature_default_when_none(self):
-        from custom_components.vag_connect.climate import VagClimate, DEFAULT_TEMP
+    def test_target_temperature_unknown_when_none(self):
+        from custom_components.vag_connect.climate import VagClimate
         coord = _make_coordinator()
         vin = list(coord.data.keys())[0]
         coord.data[vin]["target_temperature"] = None
         c = VagClimate(coord, vin)
-        assert c.target_temperature == DEFAULT_TEMP
+        assert c.target_temperature is None
 
     def test_setup_creates_one_climate_per_vehicle(self):
         import asyncio

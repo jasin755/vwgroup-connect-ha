@@ -1038,6 +1038,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 ),
                 read_extended=bool(
                     self.entry.data.get(CONF_COMPANION_READ_EXTENDED, False)
+                    or self.entry.data.get(CONF_COMPANION_READ_CHARGE_DETAIL, False)
                 ),
                 wake_sleep=bool(
                     self.entry.data.get(CONF_COMPANION_WAKE_SLEEP, False)
@@ -5525,7 +5526,12 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         )
 
     async def async_set_target_soc(self, vin: str, target: int) -> None:
-        await self._cariad_cmd(vin, "command_set_target_soc", target=target)
+        await self._cariad_cmd_optimistic(
+            vin,
+            "command_set_target_soc",
+            optimistic={"target_soc": target},
+            target=target,
+        )
 
     async def async_set_profile_target_soc(
         self, vin: str, profile_id: int | str, target: int
@@ -5583,7 +5589,12 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         )
 
     async def async_set_climatisation_temperature(self, vin: str, temp_c: float) -> None:
-        await self._cariad_cmd(vin, "command_set_climate_temperature", temp_c=temp_c)
+        await self._cariad_cmd_optimistic(
+            vin,
+            "command_set_climate_temperature",
+            optimistic={"target_temperature": temp_c},
+            temp_c=temp_c,
+        )
 
     async def async_update_charging_settings(
         self,

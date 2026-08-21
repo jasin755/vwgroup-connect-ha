@@ -128,9 +128,14 @@ class NetworkAdbTransport:
         # would parse a frozen screen as if it were live, the connector
         # manufacturing its own stale value. Removing it first turns a failed
         # dump into an honest no-data (empty cat, guard raises) instead.
-        await self.shell(f"rm -f {_DUMP_PATH}", timeout_s)
-        await self.shell(f"uiautomator dump {_DUMP_PATH}", timeout_s)
-        xml = await self.shell(f"cat {_DUMP_PATH}", timeout_s)
+        # One shell round-trip matters on the HTTP add-on transport: the old
+        # rm → dump → cat sequence started three separate adb processes.
+        xml = await self.shell(
+            f"rm -f {_DUMP_PATH}; "
+            f"uiautomator dump {_DUMP_PATH} >/dev/null; "
+            f"cat {_DUMP_PATH}",
+            timeout_s,
+        )
         if "<hierarchy" not in xml:
             raise CompanionTransportError(
                 "uiautomator returned no screen dump; the phone may be asleep, "
@@ -154,7 +159,7 @@ class NetworkAdbTransport:
         await self.shell(
             f"monkey -p {package} -c android.intent.category.LAUNCHER 1", timeout_s
         )
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(0.5)
 
     async def current_app_version(self, package: str) -> str | None:
         """Read the installed versionName of the app, for the write quarantine."""
@@ -167,7 +172,7 @@ class NetworkAdbTransport:
 
     async def tap(self, x: int, y: int, timeout_s: float = 10.0) -> None:
         await self.shell(f"input tap {int(x)} {int(y)}", timeout_s)
-        await asyncio.sleep(0.6)
+        await asyncio.sleep(0.25)
 
     # v2.26.0 — reliability primitives adapted from the prior-art ADB projects.
 
@@ -179,7 +184,7 @@ class NetworkAdbTransport:
         single most common false trip. Raw keyevent, identical on every app.
         """
         await self.shell("input keyevent 224", timeout_s)  # KEYCODE_WAKEUP
-        await asyncio.sleep(0.4)
+        await asyncio.sleep(0.15)
 
     async def sleep_if_enabled(self, timeout_s: float = 10.0) -> None:
         """Put the display back to sleep (KEYCODE_SLEEP) after a poll (#974).
@@ -200,7 +205,7 @@ class NetworkAdbTransport:
         overlay recovery is safe to run even on the unverified read-only brands.
         """
         await self.shell("input keyevent 4", timeout_s)  # KEYCODE_BACK
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.25)
 
     async def is_foreground(self, package: str, timeout_s: float = 10.0) -> bool:
         """True if ``package`` is the frontmost app.
@@ -231,4 +236,4 @@ class NetworkAdbTransport:
             f"input swipe {int(x1)} {int(y1)} {int(x2)} {int(y2)} {int(dur_ms)}",
             timeout_s,
         )
-        await asyncio.sleep(0.6)
+        await asyncio.sleep(0.3)
