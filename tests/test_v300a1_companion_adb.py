@@ -327,6 +327,11 @@ class TestCompanionClient:
         data = await c.get_status("WVWZZZAUZFW805377")
         assert data.battery_soc == 74
         assert data.electric_range_km == 312
+        assert data.range_km == 312
+        assert data.has_battery is True
+        assert data.is_electric is True
+        assert data.has_combustion is False
+        assert data.is_hybrid is False
         assert data.source_channel == "companion_adb"
         assert data.no_data is False
 
@@ -336,6 +341,8 @@ class TestCompanionClient:
         c = self._client(t)
         data = await c.get_status("WVWZZZAUZFW805377")
         assert data.no_data is True
+        assert data.has_battery is False
+        assert data.is_electric is False
 
     @pytest.mark.asyncio
     async def test_get_vehicles_returns_the_configured_vin(self) -> None:

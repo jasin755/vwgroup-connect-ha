@@ -116,6 +116,31 @@ class CompanionClient:
         for key, val in fields.items():
             if hasattr(data, key):
                 setattr(data, key, val)
+        # Companion presets read only the values visible in the brand app, so
+        # they do not receive the drivetrain metadata that the API clients do.
+        # Derive it from concrete screen readings; otherwise electric entities
+        # are filtered out even though SoC/range were parsed successfully.
+        electric_signals = (
+            data.battery_soc,
+            data.electric_range_km,
+            data.charging_state,
+            data.is_charging,
+            data.charging_power_kw,
+            data.target_soc,
+            data.remaining_charge_time_min,
+        )
+        combustion_signals = (
+            data.fuel_level,
+            data.combustion_range_km,
+        )
+        if any(value is not None for value in electric_signals):
+            data.has_battery = True
+        if any(value is not None for value in combustion_signals):
+            data.has_combustion = True
+        data.is_hybrid = data.has_battery and data.has_combustion
+        data.is_electric = data.has_battery and not data.has_combustion
+        if data.range_km is None and data.electric_range_km is not None:
+            data.range_km = data.electric_range_km
         # A companion read is a two-way-capable source only when writes are on;
         # expose that so the entity layer can reflect it.
         data.companion_writes_enabled = self._channel.writes_enabled
