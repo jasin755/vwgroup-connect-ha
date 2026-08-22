@@ -4,6 +4,7 @@
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -24,8 +25,9 @@ async def async_setup_entry(
     if coordinator.is_read_only():
         return
     client = coordinator._cariad_client
+    is_companion = coordinator.is_companion() is True
 
-    if coordinator.is_companion():
+    if is_companion:
         # Older fork builds exposed both a climate entity and a duplicate
         # climatisation switch for the same app button. Remove the stale
         # registry entries when the companion switch platform reloads.
@@ -48,7 +50,7 @@ async def async_setup_entry(
             entities.append(VagLockSwitch(coordinator, vin))
         # Companion exposes the richer ClimateEntity; avoid a second on/off
         # switch controlling the same app button.
-        if _supported(vin, "command_start_climate") and not coordinator.is_companion():
+        if _supported(vin, "command_start_climate") and not is_companion:
             entities.append(VagClimatisationSwitch(coordinator, vin))
         if _supported(vin, "command_start_window_heating"):
             entities.append(VagWindowHeatingSwitch(coordinator, vin))
@@ -210,6 +212,7 @@ class VagBatteryCareSwitch(VagConnectEntity, SwitchEntity):
 
     _attr_translation_key = "battery_care_switch"
     _attr_icon = "mdi:battery-heart-variant"
+    _attr_entity_category = EntityCategory.CONFIG
     _command_id = "command_set_battery_care"
 
     def __init__(self, coordinator: VagConnectCoordinator, vin: str) -> None:
@@ -270,6 +273,7 @@ class VagAutoUnlockPlugSwitch(VagConnectEntity, SwitchEntity):
 
     _attr_translation_key = "auto_unlock_plug_switch"
     _attr_icon = "mdi:ev-plug-type2"
+    _attr_entity_category = EntityCategory.CONFIG
     _command_id = "command_set_auto_unlock_plug"
 
     def __init__(self, coordinator: VagConnectCoordinator, vin: str) -> None:
@@ -292,6 +296,7 @@ class VagCompanionAuxAirConditioningSwitch(VagConnectEntity, SwitchEntity):
 
     _attr_translation_key = "companion_aux_air_conditioning_switch"
     _attr_icon = "mdi:car-door"
+    _attr_entity_category = EntityCategory.CONFIG
     _command_id = "command_set_companion_aux_air_conditioning"
 
     def __init__(self, coordinator: VagConnectCoordinator, vin: str) -> None:
@@ -314,6 +319,7 @@ class VagCompanionAutomaticWindowHeatingSwitch(VagConnectEntity, SwitchEntity):
 
     _attr_translation_key = "companion_automatic_window_heating_switch"
     _attr_icon = "mdi:car-defrost-front"
+    _attr_entity_category = EntityCategory.CONFIG
     _command_id = "command_set_companion_automatic_window_heating"
 
     def __init__(self, coordinator: VagConnectCoordinator, vin: str) -> None:
@@ -341,6 +347,7 @@ class VagCompanionZoneSwitch(VagConnectEntity, SwitchEntity):
     """Extended-conditioning zone selected in Air Conditioning → Settings."""
 
     _attr_icon = "mdi:car-seat-heater"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(
         self, coordinator: VagConnectCoordinator, vin: str, zone: str

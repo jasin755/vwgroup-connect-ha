@@ -34,8 +34,10 @@ from homeassistant.const import (
     UnitOfVolume,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .const import DOMAIN
 from .coordinator import VagConnectCoordinator
 from .entity_base import VagConnectEntity, register_dynamic_spawner
 
@@ -3711,6 +3713,14 @@ _TRIP_STATS_KEYS: frozenset[str] = frozenset({
 })
 _TRIP_STATS_BRANDS: frozenset[str] = frozenset({"audi", "volkswagen"})
 
+_COMPANION_REDUNDANT_SENSOR_KEYS: frozenset[str] = frozenset({
+    "range_km",                 # keep the explicit electric range
+    "charging_state",           # keep the Currently Charging binary sensor
+    "climatisation_state",      # represented by the Climate entity
+    "target_temperature",       # represented by the Climate entity
+    "target_soc",               # represented by the Charge Target Number
+})
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -3724,6 +3734,16 @@ async def async_setup_entry(
     poll, instead of users having to restart HA.
     """
     coordinator: VagConnectCoordinator = entry.runtime_data
+    is_companion = coordinator.is_companion() is True
+    if is_companion:
+        registry = er.async_get(hass)
+        for vin in coordinator.vehicles:
+            for key in _COMPANION_REDUNDANT_SENSOR_KEYS:
+                entity_id = registry.async_get_entity_id(
+                    "sensor", DOMAIN, f"{vin}_{key}"
+                )
+                if entity_id is not None:
+                    registry.async_remove(entity_id)
     # v1.14.0 (#24) — read brand once for trip-stats brand-restriction.
     brand = str(entry.data.get("brand", "")).lower()
     trip_stats_supported = brand in _TRIP_STATS_BRANDS
@@ -3742,6 +3762,11 @@ async def async_setup_entry(
         has_combustion = vehicle.get("has_combustion", False)
 
         for desc in SENSOR_DESCRIPTIONS:
+            if (
+                is_companion
+                and desc.key in _COMPANION_REDUNDANT_SENSOR_KEYS
+            ):
+                continue
             if desc.condition == "electric" and not has_battery:
                 continue
             if desc.condition == "combustion" and not has_combustion:

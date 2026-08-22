@@ -170,7 +170,8 @@ async def async_setup_entry(
 ) -> None:
     """Set up number entities. v1.25.0 PR-C: dynamic listener spawn."""
     coordinator: VagConnectCoordinator = entry.runtime_data
-    if coordinator.is_companion():
+    is_companion = coordinator.is_companion() is True
+    if is_companion:
         registry = er.async_get(hass)
         for vin in coordinator.vehicles:
             entity_id = registry.async_get_entity_id(
@@ -211,7 +212,7 @@ async def async_setup_entry(
         entities: list = []
         has_battery = vehicle.get("has_battery", False)
         for desc in NUMBER_DESCRIPTIONS:
-            if coordinator.is_companion() and desc.key == "target_temperature":
+            if is_companion and desc.key == "target_temperature":
                 # The companion ClimateEntity already owns both HVAC on/off and
                 # target temperature; a second Number is duplicate UI.
                 continue

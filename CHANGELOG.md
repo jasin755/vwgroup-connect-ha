@@ -51,6 +51,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 - **Extended companion options rebuild the client.** Enabling charge/ID.3 navigation now reloads the constructor-configured client instead of refreshing the old instance, which left target temperature, charge target and GPS unknown.
 - **ID.3 controls follow the real app behaviour.** Temperature uses verified horizontal swipes, climate/charging stop bypasses debounce, and a target-reached charging request is treated as already enabled instead of looking for a nonexistent Start button.
 - **Companion state now reaches HA immediately and reads faster.** Temperature/charge-limit commands update the coordinator optimistically, extended reads automatically follow the charge-detail opt-in, duplicate climate switch/temperature Number entities are removed, and each UI dump uses one ADB round-trip instead of three. The grounded live ID.3 full read dropped from roughly 94 s to 68 s.
+- **Fresh SoC wins immediately.** A due charge-detail read now overwrites the previously cached battery level in the same poll, and Reset clears the navigation cache/cadence so it really forces a fresh SoC. Active-charging narration from We Connect 4.3.2 is mapped too.
+- **Companion entity layout is de-duplicated.** Persistent app preferences are Configuration-category switches; redundant climate/range/charging/target sensors and diagnostic mirrors of those switches are removed from the companion registry while the canonical control/state entity remains.
 
 ## [4.1.1] - 2026-08-21 — dashboard warning lights work again on current Audi firmware
 

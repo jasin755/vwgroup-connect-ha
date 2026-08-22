@@ -390,7 +390,8 @@ _VW = BrandPreset(
                 FieldSelector(
                     target="charging_state",
                     content_desc_re=(
-                        r"(?:Start charging|Stop charging)\.\s*"
+                        r"(?:Charging status\..*?|"
+                        r"(?:Start charging|Stop charging)\.\s*)"
                         r"(Target charge level reached|Currently not charging|"
                         r"Currently charging|Charging)"
                     ),
@@ -399,7 +400,8 @@ _VW = BrandPreset(
                 FieldSelector(
                     target="is_charging",
                     content_desc_re=(
-                        r"(?:Start charging|Stop charging)\.\s*"
+                        r"(?:Charging status\..*?|"
+                        r"(?:Start charging|Stop charging)\.\s*)"
                         r"(Target charge level reached|Currently not charging|"
                         r"Currently charging|Charging)"
                     ),

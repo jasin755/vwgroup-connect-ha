@@ -210,6 +210,26 @@ def test_target_reached_is_enabled_but_not_actively_charging() -> None:
     assert got["is_charging"] is False
 
 
+def test_active_charging_reads_from_soc_narration() -> None:
+    detail = parse_ui_dump(
+        _dump(
+            _node(
+                rid="rangeArcBatterySoc",
+                text="46% • Charging",
+                desc=(
+                    "Charging status. Battery charge level: 46 per cent. "
+                    "Currently charging"
+                ),
+            )
+        )
+    )
+    nav = PRESETS["volkswagen"].nav_reads[0]
+    got = read_selectors(detail, nav.values)
+    assert got["battery_soc"] == 46
+    assert got["charging_state"] == "CHARGING"
+    assert got["is_charging"] is True
+
+
 class _DriverTransport:
     """Small state machine for command-flow tests; never touches a real car."""
 

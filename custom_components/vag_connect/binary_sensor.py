@@ -13,8 +13,10 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .const import DOMAIN
 from .coordinator import VagConnectCoordinator
 from .entity_base import VagConnectEntity, register_dynamic_spawner
 
@@ -837,6 +839,17 @@ _NEW_BINARY: tuple[VagBinarySensorDescription, ...] = (
 )
 BINARY_DESCRIPTIONS = BINARY_DESCRIPTIONS + _NEW_BINARY
 
+_COMPANION_REDUNDANT_BINARY_KEYS: frozenset[str] = frozenset({
+    "climatisation_active",
+    "battery_care_enabled",
+    "auto_unlock_when_charged",
+    "climate_at_unlock",
+    "climatisation_at_unlock",
+    "window_heating_enabled",
+    "climate_zone_front_left_enabled",
+    "climate_zone_front_right_enabled",
+})
+
 # v2.10.0 Group A — keys whose underlying VehicleData field stores
 # ``True = closed`` semantics but whose HA device class (WINDOW)
 # expects ``on = open``. Listed here so ``VagConnectBinarySensor.is_on``
@@ -968,6 +981,16 @@ async def async_setup_entry(
     all 4 sub-loops (descriptions / doors / windows / lights) run
     per-VIN once, idempotently re-run when new vehicles wake up."""
     coordinator: VagConnectCoordinator = entry.runtime_data
+    is_companion = coordinator.is_companion() is True
+    if is_companion:
+        registry = er.async_get(hass)
+        for vin in coordinator.vehicles:
+            for key in _COMPANION_REDUNDANT_BINARY_KEYS:
+                entity_id = registry.async_get_entity_id(
+                    "binary_sensor", DOMAIN, f"{vin}_{key}"
+                )
+                if entity_id is not None:
+                    registry.async_remove(entity_id)
     # b3 — "hide entities without data" (default on): skip binary sensors whose
     # value hasn't arrived (None) so the device isn't flooded with "unknown".
     # Only None is treated as "no data" — False is a real "off" reading. The
@@ -996,6 +1019,11 @@ async def async_setup_entry(
             entities.append(VagAbrpDataChangedSensor(coordinator, vin))
         # 1) Description-driven binary sensors
         for desc in BINARY_DESCRIPTIONS:
+            if (
+                is_companion
+                and desc.key in _COMPANION_REDUNDANT_BINARY_KEYS
+            ):
+                continue
             if desc.condition == "electric" and not has_battery:
                 continue
             # v4.0.0 grounding wave — soft capability gate (opt-in via

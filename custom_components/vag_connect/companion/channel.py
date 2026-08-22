@@ -192,6 +192,8 @@ class CompanionChannel:
         self._cooldown_until = 0.0
         self._consecutive_failures = 0
         self._rate_limited_until = 0.0
+        self._last_nav_at = None
+        self._nav_cache.clear()
         _LOGGER.debug("companion %s: backoff reset by request", self._preset.brand)
 
     # -- read -----------------------------------------------------------------
@@ -291,13 +293,15 @@ class CompanionChannel:
         """
         self._last_nav_at = self._now()
         for nav in self._preset.nav_reads:
-            if all(fields.get(v.target) is not None for v in nav.values):
-                continue  # nothing to fetch from this detail
             try:
                 detail = await self._open_detail(nav.tile)
                 if detail is not None:
                     for key, val in read_selectors(detail, nav.values).items():
-                        fields.setdefault(key, val)
+                        # A due navigation read is fresher than the cache that
+                        # was applied at the start of this poll. Overwrite it in
+                        # the same cycle instead of showing the old SoC once
+                        # more (or, worse, skipping every future detail read).
+                        fields[key] = val
                         self._nav_cache[key] = val
             except CompanionTransportError:
                 _LOGGER.debug(

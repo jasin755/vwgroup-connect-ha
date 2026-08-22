@@ -203,6 +203,34 @@ class TestNavReadOptIn:
         await ch.read()
         assert len(t.taps) == 2
 
+    @pytest.mark.asyncio
+    async def test_due_nav_read_overwrites_cached_soc_in_same_poll(self) -> None:
+        now, tt = _clock()
+        detail_60 = _dump(_cd("Battery charge level: 60 per cent"))
+        detail_44 = _dump(_cd("Battery charge level: 44 per cent"))
+        t = _NavTransport(_VW_OVERVIEW, detail_60)
+        ch = CompanionChannel(
+            t, PRESETS["volkswagen"], time_fn=now, read_charge_detail=True,
+        )
+        assert (await ch.read())["battery_soc"] == 60
+        t._detail = detail_44
+        tt["v"] += _NAV_READ_INTERVAL_S + 1
+        assert (await ch.read())["battery_soc"] == 44
+
+    @pytest.mark.asyncio
+    async def test_manual_reset_forces_fresh_nav_read(self) -> None:
+        now, _ = _clock()
+        detail_60 = _dump(_cd("Battery charge level: 60 per cent"))
+        detail_44 = _dump(_cd("Battery charge level: 44 per cent"))
+        t = _NavTransport(_VW_OVERVIEW, detail_60)
+        ch = CompanionChannel(
+            t, PRESETS["volkswagen"], time_fn=now, read_charge_detail=True,
+        )
+        assert (await ch.read())["battery_soc"] == 60
+        t._detail = detail_44
+        ch.reset_cooldown()
+        assert (await ch.read())["battery_soc"] == 44
+
 
 # ── CUPRA: grounded from the real #968 dump ──────────────────────────────────
 
