@@ -52,6 +52,12 @@ CONF_COMPANION_WAKE_SLEEP        = "companion_wake_sleep"
 CONF_COMPANION_USE_ADDON         = "companion_use_addon"
 CONF_COMPANION_ADDON_TOKEN       = "companion_addon_token"
 DEFAULT_COMPANION_ADDON_PORT     = 8129
+# Personal-fork companion agent. When set, CONF_ADB_HOST/PORT address the
+# Android AccessibilityService's authenticated LAN API, not an ADB endpoint.
+# The existing token key is reused so an ADB-Bridge entry can migrate without
+# asking the user to copy another secret.
+CONF_COMPANION_USE_AGENT         = "companion_use_agent"
+DEFAULT_COMPANION_AGENT_PORT     = 8765
 # v2.17.5 (#759) — optional per-VIN S-PIN overrides: {vin: spin}. When a
 # vehicle has no entry here the shared CONF_SPIN is used, so existing
 # single-S-PIN setups are unchanged. Set via the Options flow.

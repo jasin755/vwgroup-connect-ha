@@ -29,9 +29,13 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .const import (
+    CONF_ADB_HOST,
+    CONF_ADB_PORT,
     CONF_BRAND,
+    CONF_COMPANION_ADDON_TOKEN,
     CONF_COMPANION_READ_CHARGE_DETAIL,
     CONF_COMPANION_READ_EXTENDED,
+    CONF_COMPANION_USE_AGENT,
     CONF_COMPANION_WAKE_SLEEP,
     CONF_PASSWORD,
     CONF_USERNAME,
@@ -1096,6 +1100,10 @@ async def _async_update_listener(
         CONF_COMPANION_READ_CHARGE_DETAIL,
         CONF_COMPANION_READ_EXTENDED,
         CONF_COMPANION_WAKE_SLEEP,
+        CONF_COMPANION_USE_AGENT,
+        CONF_ADB_HOST,
+        CONF_ADB_PORT,
+        CONF_COMPANION_ADDON_TOKEN,
     }
     options: dict = dict(entry.options) if entry.options else {}
 

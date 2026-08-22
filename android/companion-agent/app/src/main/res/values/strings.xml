@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VAG Companion Agent</string>
+    <string name="service_name">VAG Companion Agent</string>
+    <string name="service_description">Reads the visible Volkswagen app accessibility tree for your Home Assistant instance and performs only commands sent over your authorised ADB connection.</string>
+    <string name="status_enabled">Accessibility service is enabled and connected.</string>
+    <string name="status_disabled">Accessibility service is not enabled.</string>
+    <string name="open_settings">Open Accessibility settings</string>
+    <string name="open_vw">Open Volkswagen app</string>
+    <string name="privacy_note">The agent does not read Volkswagen credentials or network traffic. It only observes the visible accessibility tree of the Volkswagen app. Its command provider is restricted to the Android shell UID used by ADB.</string>
+</resources>

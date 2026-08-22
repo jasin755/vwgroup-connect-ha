@@ -40,10 +40,13 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
-## [Unreleased]
+## [4.2.0] - 2026-08-22 — direct Android companion agent
 
 ### Added
-- **Grounded ID.3 companion reads and controls.** We Connect 4.3.2 now exposes lock state, range/SoC, climate status and target, confirmed climate preferences/zones, charging settings, odometer, next service and parking coordinates through the ADB companion. Existing HA climate, Number, Switch, Select and device-tracker entities are reused.
+- **ADB-free companion runtime.** A small Android 13 AccessibilityService agent now exposes a token-protected LAN API for snapshots, foreground/app-version checks, launch, tap, swipe, Back and screen wake/sleep. ADB is only needed to install or update the APK; Wireless Debugging can remain off during normal Home Assistant operation.
+- **Automatic ADB Bridge migration.** An existing companion entry uses its final live ADB connection to discover and verify the agent, then persists the phone IP and port `8765`. Agent mode has no silent `uiautomator` fallback: connection, token and accessibility failures remain visible and actionable.
+- **Persistent accessibility snapshots.** On a live Pixel 4a / Android 13 with Volkswagen 4.3.2, direct agent snapshots take roughly 0.16–0.27 seconds versus 2.3–2.8 seconds for `uiautomator dump`, while preserving the XML shape consumed by the existing grounded screen parsers.
+- **Grounded ID.3 companion reads and controls.** We Connect 4.3.2 now exposes lock state, range/SoC, climate status and target, confirmed climate preferences/zones, charging settings, odometer, next service and parking coordinates through the companion agent. Existing HA climate, Number, Switch, Select and device-tracker entities are reused.
 - **Multi-screen companion driver.** Polls and commands are serialised, extended navigation is opt-in and cached on a 15-minute cadence, writes are app-version-gated, duplicate taps are debounced and immediate stop commands are never blocked.
 
 ### Fixed

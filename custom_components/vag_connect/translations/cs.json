@@ -139,19 +139,19 @@
         "description": "Čtěte údaje o svém autě a ovládejte ho tak, že přes ADB řídíte oficiální aplikaci na náhradním telefonu s Androidem. Tato funkce je EXPERIMENTÁLNÍ a je nutné ji výslovně zapnout. Potřebujete druhý telefon, který zůstane přihlášený v aplikaci značky a má zapnuté ADB přes Wi-Fi. Starší telefon (Android 10 nebo starší) se sem připojí přímo; moderní telefon (Android 11+, bezdrátové ladění) vyžaduje doplněk „VW Group App ADB Bridge“, na který pak tuto integraci nasměrujete. Volkswagen je ověřený; ostatní značky jsou prozatím pouze pro čtení, dokud nebude potvrzena mapa obrazovek ze skutečného zařízení. Nevyžaduje se žádný root a nečtou se žádné tokeny aplikací — integrace pouze čte obrazovku a klepe na tlačítka.",
         "data": {
           "brand": "Značka vozidla",
-          "adb_host": "IP adresa telefonu",
-          "adb_port": "Port ADB",
+          "adb_host": "IP adresa Companion Agenta",
+          "adb_port": "Port API agenta",
           "vin": "VIN (vozidlo zobrazené v aplikaci)",
           "spin": "S-PIN (volitelné)",
           "companion_use_addon": "Připojit přes doplněk ADB Bridge",
-          "companion_addon_token": "Token doplňku"
+          "companion_addon_token": "Token agenta"
         },
         "data_description": {
-          "adb_host": "Adresa telefonu ve vaší síti, např. 192.168.1.42.",
-          "adb_port": "Obvykle 5555 pro ADB přes Wi-Fi.",
+          "adb_host": "Adresa telefonu ve vaší síti, např. 192.168.1.42. Rezervujte ji v DHCP.",
+          "adb_port": "Port API Companion Agenta, obvykle 8765.",
           "vin": "17místný VIN vozidla zobrazeného v aplikaci.",
           "companion_use_addon": "Zaškrtněte u telefonu s Androidem 11 nebo novějším, který nabízí pouze bezdrátové ladění. Poté výše zadejte adresu DOPLŇKU místo adresy telefonu.",
-          "companion_addon_token": "Potřebné pouze v případě, že jste v doplňku nastavili api_token."
+          "companion_addon_token": "Token nastavený do Companion Agenta při instalaci."
         }
       }
     },

@@ -439,12 +439,12 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                     "Portal (E-Mail + Passwort) — Volkswagen EU / Škoda / Porsche "
                     "· VW: dauerhafte Zwei-Wege-Befehle (MBB) gleich mit aktivierbar"
                 ),
-                # v3.0.0-alpha — experimental fourth source. Drives the official
-                # app on a spare phone over ADB; last-resort two-way where the
-                # network side is read-only. Clearly flagged EXPERIMENTAL.
+                # Experimental fourth source. Drives the official app through
+                # the Android AccessibilityService agent; last-resort two-way
+                # path where the manufacturer network API is read-only.
                 "companion_adb": (
-                    "Companion-Handy (ADB) — EXPERIMENTELL, alle Marken "
-                    "(zweites Handy mit eingeloggter App nötig)"
+                    "Companion-Handy (Android Agent) — EXPERIMENTELL, alle "
+                    "Marken (zweites Handy mit eingeloggter App nötig)"
                 ),
             },
         )
@@ -452,22 +452,21 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
     async def async_step_companion_adb(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """v3.0.0-alpha — set up the companion (ADB) channel.
+        """Set up the Android companion-agent channel.
 
-        Collects the phone's network-ADB address, the brand, the VIN the app
-        shows, and an optional S-PIN, then validates the connection by opening
-        ADB and reading the app's version. No credentials are stored: the phone
-        is already signed in, and the only secret at rest is the ADB RSA key.
+        Collects the agent's LAN address and token, brand, VIN and optional
+        S-PIN, then asks the agent for the installed Volkswagen app version.
+        Volkswagen credentials remain exclusively inside the official app.
         """
         from .const import (  # noqa: PLC0415
             CONF_ADB_HOST,
             CONF_ADB_PORT,
             CONF_COMPANION_ADDON_TOKEN,
             CONF_COMPANION_USE_ADDON,
+            CONF_COMPANION_USE_AGENT,
             CONF_STRATEGY,
             CONF_VIN,
-            DEFAULT_ADB_PORT,
-            DEFAULT_COMPANION_ADDON_PORT,
+            DEFAULT_COMPANION_AGENT_PORT,
             STRATEGY_COMPANION_ADB,
         )
         from .companion.presets import PRESETS  # noqa: PLC0415
@@ -477,21 +476,19 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
         if user_input is not None:
             brand = user_input[CONF_BRAND]
             host = user_input[CONF_ADB_HOST].strip()
-            use_addon = bool(user_input.get(CONF_COMPANION_USE_ADDON))
             addon_token = (user_input.get(CONF_COMPANION_ADDON_TOKEN) or "").strip()
-            # The add-on serves its API on its own port, so a user who ticked
-            # the box and left the ADB default in place gets the right one.
-            _default_port = (
-                DEFAULT_COMPANION_ADDON_PORT if use_addon else DEFAULT_ADB_PORT
+            port = int(
+                user_input.get(CONF_ADB_PORT) or DEFAULT_COMPANION_AGENT_PORT
             )
-            port = int(user_input.get(CONF_ADB_PORT) or _default_port)
-            if use_addon and port == DEFAULT_ADB_PORT:
-                port = DEFAULT_COMPANION_ADDON_PORT
             vin = user_input[CONF_VIN].strip().upper()
             spin = (user_input.get(CONF_SPIN) or "").strip()
 
             valid, reason = await self._companion_probe(
-                brand, host, port, use_addon=use_addon, addon_token=addon_token
+                brand,
+                host,
+                port,
+                use_agent=True,
+                addon_token=addon_token,
             )
             if not valid:
                 errors["base"] = reason
@@ -499,7 +496,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 await self.async_set_unique_id(f"companion_{brand}_{vin}")
                 self._abort_if_unique_id_configured()
                 preset = PRESETS[brand]
-                title = f"{brand.title()} (Companion/ADB) {vin[-6:]}"
+                title = f"{brand.title()} (Companion Agent) {vin[-6:]}"
                 if not preset.verified:
                     title += " [alpha, read-only]"
                 return self.async_create_entry(
@@ -511,7 +508,8 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                         CONF_ADB_PORT: port,
                         CONF_VIN: vin,
                         CONF_SPIN: spin,
-                        CONF_COMPANION_USE_ADDON: use_addon,
+                        CONF_COMPANION_USE_ADDON: False,
+                        CONF_COMPANION_USE_AGENT: True,
                         CONF_COMPANION_ADDON_TOKEN: addon_token,
                     },
                 )
@@ -521,15 +519,12 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
             {
                 vol.Required(CONF_BRAND, default="volkswagen"): vol.In(brands),
                 vol.Required(CONF_ADB_HOST): str,
-                vol.Optional(CONF_ADB_PORT, default=DEFAULT_ADB_PORT): int,
+                vol.Optional(
+                    CONF_ADB_PORT, default=DEFAULT_COMPANION_AGENT_PORT
+                ): int,
                 vol.Required(CONF_VIN): str,
                 vol.Optional(CONF_SPIN, default=""): str,
-                # #968 — on Android 11+ the phone only speaks wireless debugging
-                # (TLS + pairing), which the built-in transport cannot do. Tick
-                # this and give the ADD-ON's address above instead of the
-                # phone's; the add-on holds the phone connection.
-                vol.Optional(CONF_COMPANION_USE_ADDON, default=False): bool,
-                vol.Optional(CONF_COMPANION_ADDON_TOKEN, default=""): str,
+                vol.Required(CONF_COMPANION_ADDON_TOKEN): str,
             }
         )
         return self.async_show_form(
@@ -543,9 +538,10 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
         port: int,
         *,
         use_addon: bool = False,
+        use_agent: bool = False,
         addon_token: str = "",
     ) -> tuple[bool, str]:
-        """Open ADB and read the app version; returns (ok, error_key)."""
+        """Open the selected phone transport and read the app version."""
         from .companion.presets import PRESETS  # noqa: PLC0415
         from .companion.transport import (  # noqa: PLC0415
             CompanionTransportError,
@@ -556,7 +552,11 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
         if preset is None:
             return False, "companion_unknown_brand"
         transport: NetworkAdbTransport
-        if use_addon:
+        if use_agent:
+            from .companion.agent_transport import AgentHttpTransport  # noqa: PLC0415
+
+            transport = AgentHttpTransport(host, port, token=addon_token)
+        elif use_addon:
             # host/port address the add-on; it owns the phone connection, so
             # there is no local RSA key involved.
             from .companion.addon_transport import AddOnAdbTransport  # noqa: PLC0415
@@ -2278,10 +2278,35 @@ class VagConnectOptionsFlow(config_entries.OptionsFlow):
             CONF_COMPANION_READ_CHARGE_DETAIL,
             CONF_COMPANION_READ_EXTENDED,
             CONF_COMPANION_WAKE_SLEEP,
+            CONF_ADB_HOST,
+            CONF_ADB_PORT,
+            CONF_COMPANION_ADDON_TOKEN,
             CONF_STRATEGY,
+            DEFAULT_COMPANION_AGENT_PORT,
             STRATEGY_COMPANION_ADB,
         )
         if current_data.get(CONF_STRATEGY) == STRATEGY_COMPANION_ADB:
+            schema[vol.Optional(
+                CONF_ADB_HOST,
+                default=current_options.get(
+                    CONF_ADB_HOST,
+                    current_data.get(CONF_ADB_HOST, ""),
+                ),
+            )] = str
+            schema[vol.Optional(
+                CONF_ADB_PORT,
+                default=current_options.get(
+                    CONF_ADB_PORT,
+                    current_data.get(CONF_ADB_PORT, DEFAULT_COMPANION_AGENT_PORT),
+                ),
+            )] = int
+            schema[vol.Optional(
+                CONF_COMPANION_ADDON_TOKEN,
+                default=current_options.get(
+                    CONF_COMPANION_ADDON_TOKEN,
+                    current_data.get(CONF_COMPANION_ADDON_TOKEN, ""),
+                ),
+            )] = _PASSWORD_SELECTOR
             schema[vol.Optional(
                 CONF_COMPANION_READ_CHARGE_DETAIL,
                 default=current_options.get(

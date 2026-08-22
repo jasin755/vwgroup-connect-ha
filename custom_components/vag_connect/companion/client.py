@@ -42,20 +42,33 @@ class CompanionClient:
         read_extended: bool = False,
         wake_sleep: bool = False,
         use_addon: bool = False,
+        use_agent: bool = False,
         addon_token: str = "",
+        session: object | None = None,
     ) -> None:
         self._brand = brand.lower()
         self._vin = vin.upper()
         preset = PRESETS.get(self._brand)
         if preset is None:
             raise ValueError(f"no companion preset for brand {brand!r}")
-        if use_addon:
+        self._transport: NetworkAdbTransport
+        if use_agent:
+            from .agent_transport import AgentHttpTransport  # noqa: PLC0415
+
+            self._transport = AgentHttpTransport(
+                host,
+                port,
+                token=addon_token,
+                session=session,
+                wake_sleep=wake_sleep,
+            )
+        elif use_addon:
             # host/port address the ADB Bridge add-on, which owns the phone
             # connection. Everything above the wire is identical, so the
             # channel below neither knows nor cares which transport it got.
             from .addon_transport import AddOnAdbTransport  # noqa: PLC0415
 
-            self._transport: NetworkAdbTransport = AddOnAdbTransport(
+            self._transport = AddOnAdbTransport(
                 host, port, token=addon_token, wake_sleep=wake_sleep
             )
         else:

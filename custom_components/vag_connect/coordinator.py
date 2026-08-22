@@ -1024,13 +1024,68 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 CONF_COMPANION_READ_CHARGE_DETAIL,
                 CONF_COMPANION_READ_EXTENDED,
                 CONF_COMPANION_USE_ADDON,
+                CONF_COMPANION_USE_AGENT,
                 CONF_COMPANION_WAKE_SLEEP,
+                DEFAULT_COMPANION_ADDON_PORT,
+                DEFAULT_COMPANION_AGENT_PORT,
             )
+            session = async_get_clientsession(self.hass)
+            companion_data = dict(self.entry.data)
+            use_agent = bool(companion_data.get(CONF_COMPANION_USE_AGENT, False))
+            companion_host = str(companion_data[CONF_ADB_HOST])
+            companion_port = int(
+                companion_data.get(CONF_ADB_PORT, DEFAULT_ADB_PORT)
+            )
+            companion_token = str(
+                companion_data.get(CONF_COMPANION_ADDON_TOKEN, "") or ""
+            )
+
+            # Seamless one-time migration for an already-working ADB Bridge
+            # entry. While Wireless Debugging is still connected, the add-on's
+            # health payload tells us the phone IP. If the installed agent
+            # answers there, persist that address and from this point forward
+            # never depend on ADB again.
+            if (
+                not use_agent
+                and companion_data.get(CONF_COMPANION_USE_ADDON, False)
+                and companion_token
+            ):
+                from .companion.agent_transport import (  # noqa: PLC0415
+                    discover_agent_from_addon,
+                )
+
+                agent_host = await discover_agent_from_addon(
+                    companion_host,
+                    int(companion_data.get(
+                        CONF_ADB_PORT, DEFAULT_COMPANION_ADDON_PORT
+                    )),
+                    companion_token,
+                    session=session,
+                )
+                if agent_host:
+                    use_agent = True
+                    companion_host = agent_host
+                    companion_port = DEFAULT_COMPANION_AGENT_PORT
+                    migrated = {
+                        **companion_data,
+                        CONF_ADB_HOST: companion_host,
+                        CONF_ADB_PORT: companion_port,
+                        CONF_COMPANION_USE_AGENT: True,
+                    }
+                    self.hass.config_entries.async_update_entry(
+                        self.entry, data=migrated
+                    )
+                    _LOGGER.info(
+                        "Companion entry migrated from Wireless ADB to the "
+                        "Android agent at %s:%d",
+                        companion_host,
+                        companion_port,
+                    )
             self._cariad_client = CompanionClient(
                 brand=brand,
                 vin=self.entry.data[CONF_VIN],
-                host=self.entry.data[CONF_ADB_HOST],
-                port=self.entry.data.get(CONF_ADB_PORT, DEFAULT_ADB_PORT),
+                host=companion_host,
+                port=companion_port,
                 adbkey_path=self.hass.config.path(".storage", "vag_connect_adbkey"),
                 time_fn=time.monotonic,
                 read_charge_detail=bool(
@@ -1049,9 +1104,9 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 use_addon=bool(
                     self.entry.data.get(CONF_COMPANION_USE_ADDON, False)
                 ),
-                addon_token=str(
-                    self.entry.data.get(CONF_COMPANION_ADDON_TOKEN, "") or ""
-                ),
+                use_agent=use_agent,
+                addon_token=companion_token,
+                session=session,
             )
             # v2.26.0 (ckomma #21) — re-apply a rate-limit backoff persisted
             # before a restart, so an account lockout is not cleared just by
