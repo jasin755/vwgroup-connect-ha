@@ -4,15 +4,17 @@ Small Android AccessibilityService used by the experimental Volkswagen
 companion channel. It reads only the visible accessibility tree of the official
 Volkswagen app and performs gestures requested by Home Assistant.
 
-Normal operation does **not** use ADB. Home Assistant connects directly to the
-phone on TCP port `8765`; Wireless Debugging can be disabled after installation
-and provisioning. Reserve the phone's address in DHCP so the configured address
-does not change.
+Normal operation does **not** use ADB. The agent opens an authenticated outbound
+HTTPS long-poll to Home Assistant and receives commands in the response;
+Wireless Debugging can be disabled after installation and provisioning. The
+phone does not need a fixed address or an inbound firewall/VLAN rule. The local
+port `8765` remains available for trusted-LAN diagnostics.
 
 ## Security model
 
 - The API listens on the phone's LAN interfaces and requires `X-Token` on every
   request.
+- The outbound Home Assistant relay uses the same token on every HTTPS poll.
 - The token is provisioned through a ContentProvider protected by Android's
   signature-level `DUMP` permission. Regular phone applications cannot call it.
 - The agent never reads Volkswagen credentials, app-private storage, OAuth
@@ -49,7 +51,9 @@ adb shell settings put secure accessibility_enabled 1
 adb shell content call \
   --uri content://me.pognerebko.vagcompanion.agent \
   --method provision \
-  --extra token:s:YOUR_RANDOM_TOKEN
+  --extra token:s:YOUR_RANDOM_TOKEN \
+  --extra relay_url_b64:s:BASE64_OF_HTTPS_HA_URL \
+  --extra channel_id:s:HA_CONFIG_ENTRY_ID
 ```
 
 Verify from another machine on the same LAN:

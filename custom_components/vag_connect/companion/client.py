@@ -43,8 +43,10 @@ class CompanionClient:
         wake_sleep: bool = False,
         use_addon: bool = False,
         use_agent: bool = False,
+        use_relay: bool = False,
         addon_token: str = "",
         session: object | None = None,
+        relay_broker: Any = None,
     ) -> None:
         self._brand = brand.lower()
         self._vin = vin.upper()
@@ -52,7 +54,15 @@ class CompanionClient:
         if preset is None:
             raise ValueError(f"no companion preset for brand {brand!r}")
         self._transport: NetworkAdbTransport
-        if use_agent:
+        if use_relay:
+            if relay_broker is None:
+                raise ValueError("companion relay requested without a broker")
+            from .relay import AgentRelayTransport  # noqa: PLC0415
+
+            self._transport = AgentRelayTransport(
+                relay_broker, wake_sleep=wake_sleep
+            )
+        elif use_agent:
             from .agent_transport import AgentHttpTransport  # noqa: PLC0415
 
             self._transport = AgentHttpTransport(

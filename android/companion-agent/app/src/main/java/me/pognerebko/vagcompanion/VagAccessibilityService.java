@@ -27,6 +27,7 @@ public final class VagAccessibilityService extends AccessibilityService {
     private final Object revisionMonitor = new Object();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private AgentHttpServer httpServer;
+    private AgentRelayClient relayClient;
     private long revision;
     private String eventPackage = "";
     private String eventClass = "";
@@ -41,6 +42,7 @@ public final class VagAccessibilityService extends AccessibilityService {
         instance = this;
         httpServer = new AgentHttpServer(this);
         httpServer.start();
+        startRelayClient();
         bumpRevision(VOLKSWAGEN_PACKAGE, "service-connected");
     }
 
@@ -64,6 +66,7 @@ public final class VagAccessibilityService extends AccessibilityService {
     @Override
     public boolean onUnbind(Intent intent) {
         stopHttpServer();
+        stopRelayClient();
         if (instance == this) {
             instance = null;
         }
@@ -76,6 +79,7 @@ public final class VagAccessibilityService extends AccessibilityService {
     @Override
     public void onDestroy() {
         stopHttpServer();
+        stopRelayClient();
         if (instance == this) {
             instance = null;
         }
@@ -285,6 +289,11 @@ public final class VagAccessibilityService extends AccessibilityService {
         }
     }
 
+    void restartRelayClient() {
+        stopRelayClient();
+        startRelayClient();
+    }
+
     private Snapshot snapshotOnMainThread() {
         AccessibilityNodeInfo root = findVolkswagenRoot();
         if (root == null) {
@@ -409,6 +418,18 @@ public final class VagAccessibilityService extends AccessibilityService {
         if (httpServer != null) {
             httpServer.close();
             httpServer = null;
+        }
+    }
+
+    private void startRelayClient() {
+        relayClient = new AgentRelayClient(this);
+        relayClient.start();
+    }
+
+    private void stopRelayClient() {
+        if (relayClient != null) {
+            relayClient.close();
+            relayClient = null;
         }
     }
 

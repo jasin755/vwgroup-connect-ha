@@ -40,6 +40,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.2.1] - 2026-08-22 — ADB-free outbound companion relay
+
+### Fixed
+- **Wireless ADB is genuinely removed from runtime.** The first direct-LAN agent migration could fail when HA Core could not open an inbound connection to the phone, then quietly retain the old ADB transport. The Android agent now long-polls a token-protected HTTPS endpoint on Home Assistant and receives commands in the response, so phone IP changes, VLAN routing and client isolation no longer matter. Once the handshake succeeds, the entry persists relay mode with both ADB transports disabled and never silently falls back.
+- **Companion token is redacted from diagnostics.** The existing add-on/agent token is now explicitly covered by the config diagnostics scrubber and a regression test, so a downloaded diagnostics attachment cannot expose the relay secret.
+
 ## [4.2.0] - 2026-08-22 — direct Android companion agent
 
 ### Added

@@ -1036,6 +1036,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: VagConnectConfigEntry) 
 
     if unload_ok and coordinator is not None:
         await coordinator.async_shutdown()
+        from .const import CONF_STRATEGY, STRATEGY_COMPANION_ADB  # noqa: PLC0415
+        if entry.data.get(CONF_STRATEGY) == STRATEGY_COMPANION_ADB:
+            from .companion.relay import unregister_relay  # noqa: PLC0415
+            unregister_relay(hass, entry.entry_id)
 
     if not hass.config_entries.async_entries(DOMAIN):
         for svc in [

@@ -38,6 +38,7 @@ from .const import (
     CONF_ABRP_API_KEY,
     CONF_ABRP_USER_TOKEN,
     CONF_BRAND,
+    CONF_COMPANION_ADDON_TOKEN,
     CONF_DATA_ACT_IDENTIFIERS,
     CONF_ENABLE_REVERSE_GEOCODING,
     CONF_PASSWORD,
@@ -68,6 +69,7 @@ _REDACT_KEYS = frozenset({
     # options help text promising "Never logged".
     CONF_ABRP_API_KEY,
     CONF_ABRP_USER_TOKEN,
+    CONF_COMPANION_ADDON_TOKEN,
     CONF_USERNAME,
     "vin",
     "address",

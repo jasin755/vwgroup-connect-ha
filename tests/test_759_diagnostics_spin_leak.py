@@ -31,6 +31,7 @@ _ENTRY_DATA = {
     },
     "abrp_api_key": "SYNTHETIC_ABRP_KEY",
     "abrp_user_token": "SYNTHETIC_ABRP_TOKEN",
+    "companion_addon_token": "SYNTHETIC_COMPANION_RELAY_TOKEN",
 }
 
 
@@ -54,6 +55,10 @@ def test_759_abrp_credentials_not_leaked() -> None:
     assert "SYNTHETIC_ABRP_TOKEN" not in dump
 
 
+def test_companion_relay_token_not_leaked() -> None:
+    assert "SYNTHETIC_COMPANION_RELAY_TOKEN" not in _dump()
+
+
 def test_759_shared_spin_still_redacted() -> None:
     # No regression on what already worked.
     assert "SYNTHETIC_SHARED_SPIN" not in _dump()
@@ -66,6 +71,7 @@ def test_759_nothing_sensitive_survives_scrub() -> None:
         "SYNTHETIC_SHARED_SPIN",
         "SYNTHETIC_ABRP_KEY",
         "SYNTHETIC_ABRP_TOKEN",
+        "SYNTHETIC_COMPANION_RELAY_TOKEN",
         "9999",
         "1234",
         "WVWZZZSYNTHETIC001",

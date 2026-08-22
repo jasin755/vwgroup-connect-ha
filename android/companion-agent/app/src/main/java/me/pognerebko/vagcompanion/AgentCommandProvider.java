@@ -38,12 +38,37 @@ public final class AgentCommandProvider extends ContentProvider {
         switch (method == null ? "" : method) {
             case "provision":
                 String token = extras == null ? "" : extras.getString("token", "");
+                String relayUrl = extras == null
+                        ? ""
+                        : extras.getString("relay_url", "");
+                String relayUrlB64 = extras == null
+                        ? ""
+                        : extras.getString("relay_url_b64", "");
+                if (relayUrl.isEmpty() && !relayUrlB64.isEmpty()) {
+                    try {
+                        relayUrl = new String(
+                                Base64.decode(relayUrlB64, Base64.DEFAULT),
+                                StandardCharsets.UTF_8);
+                    } catch (IllegalArgumentException ignored) {
+                        relayUrl = "";
+                    }
+                }
+                String channelId = extras == null
+                        ? ""
+                        : extras.getString("channel_id", "");
                 if (!AgentHttpServer.isValidToken(token)) {
                     result.putString("status", "invalid_token");
+                } else if (!relayUrl.isEmpty()
+                        && (!relayUrl.startsWith("https://") || channelId.isEmpty())) {
+                    result.putString("status", "invalid_relay");
                 } else if (getContext() == null) {
                     result.putString("status", "no_context");
                 } else {
                     AgentHttpServer.saveToken(getContext(), token);
+                    if (!relayUrl.isEmpty()) {
+                        AgentRelayClient.saveConfig(getContext(), relayUrl, channelId);
+                    }
+                    service.restartRelayClient();
                     result.putString("status", "ok");
                 }
                 return result;

@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** A tiny authenticated HTTP server bound strictly to the phone's loopback.
  *
@@ -39,7 +40,12 @@ final class AgentHttpServer implements AutoCloseable {
 
     private final VagAccessibilityService service;
     private final ExecutorService clients = Executors.newFixedThreadPool(2);
+    private final AtomicLong requestCount = new AtomicLong();
+    private final AtomicLong snapshotCount = new AtomicLong();
+    private final AtomicLong actionCount = new AtomicLong();
     private volatile boolean running;
+    private volatile String lastNonHealthClient = "";
+    private volatile String lastNonHealthPath = "";
     private ServerSocket serverSocket;
     private Thread acceptThread;
 
@@ -75,6 +81,11 @@ final class AgentHttpServer implements AutoCloseable {
                 .edit()
                 .putString(KEY_TOKEN, token)
                 .apply();
+    }
+
+    static String loadToken(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_TOKEN, "");
     }
 
     static boolean isValidToken(String token) {
@@ -129,8 +140,7 @@ final class AgentHttpServer implements AutoCloseable {
                 return;
             }
             Map<String, String> headers = readHeaders(reader);
-            String expected = service.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .getString(KEY_TOKEN, "");
+            String expected = loadToken(service);
             if (!tokensEqual(expected, headers.getOrDefault("x-token", ""))) {
                 write(client.getOutputStream(), 403, "forbidden");
                 return;
@@ -148,6 +158,18 @@ final class AgentHttpServer implements AutoCloseable {
             Map<String, String> query = queryStart >= 0
                     ? parseQuery(target.substring(queryStart + 1))
                     : new HashMap<>();
+            requestCount.incrementAndGet();
+            if ("/snapshot".equals(path) || "/wait".equals(path)) {
+                snapshotCount.incrementAndGet();
+            } else if (!"/health".equals(path)
+                    && !"/version".equals(path)
+                    && !"/foreground".equals(path)) {
+                actionCount.incrementAndGet();
+            }
+            if (!"/health".equals(path)) {
+                lastNonHealthClient = client.getInetAddress().getHostAddress();
+                lastNonHealthPath = path;
+            }
 
             switch (path) {
                 case "/health":
@@ -159,6 +181,16 @@ final class AgentHttpServer implements AutoCloseable {
                                     + ",\"vw_version\":\""
                                     + jsonEscape(service.packageVersion(
                                             VagAccessibilityService.VOLKSWAGEN_PACKAGE))
+                                    + "\",\"requests\":"
+                                    + requestCount.get()
+                                    + ",\"snapshots\":"
+                                    + snapshotCount.get()
+                                    + ",\"actions\":"
+                                    + actionCount.get()
+                                    + ",\"last_client\":\""
+                                    + jsonEscape(lastNonHealthClient)
+                                    + "\",\"last_path\":\""
+                                    + jsonEscape(lastNonHealthPath)
                                     + "\"}");
                     return;
                 case "/snapshot":
