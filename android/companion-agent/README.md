@@ -14,6 +14,10 @@ Volkswagen accessibility changes are debounced for 300 ms and pushed as
 overview snapshots over the relay. Home Assistant ignores detail/splash trees,
 so only complete overview state produces an event-driven entity update.
 
+While its AccessibilityService is enabled, the agent holds a dim screen wake
+lock. This keeps a dedicated companion phone available even when a smart plug
+has disconnected its charger; Android releases the lock when the service stops.
+
 ## Security model
 
 - The API listens on the phone's LAN interfaces and requires `X-Token` on every

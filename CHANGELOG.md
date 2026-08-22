@@ -40,6 +40,11 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.5.1] - 2026-08-22 — keep companion display awake off charger
+
+### Fixed
+- **The dedicated companion display no longer sleeps when the smart plug is off.** Android Agent 0.5.1 holds a non-reference-counted dim screen wake lock for the lifetime of its enabled AccessibilityService and releases it on service shutdown. The screen therefore remains available while the phone cycles between battery thresholds instead of relying on Developer Options' charger-only “Stay awake” setting.
+
 ## [4.5.0] - 2026-08-22 — Android companion battery diagnostic
 
 ### Added

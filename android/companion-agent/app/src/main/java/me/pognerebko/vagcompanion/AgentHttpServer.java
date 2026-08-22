@@ -184,6 +184,8 @@ final class AgentHttpServer implements AutoCloseable {
                                             VagAccessibilityService.VOLKSWAGEN_PACKAGE))
                                     + "\",\"phone_battery_level\":"
                                     + service.batteryLevel()
+                                    + ",\"keep_screen_awake\":"
+                                    + service.isScreenWakeLockHeld()
                                     + ",\"requests\":"
                                     + requestCount.get()
                                     + ",\"snapshots\":"

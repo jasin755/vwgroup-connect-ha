@@ -2,6 +2,7 @@ package me.pognerebko.vagcompanion;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
+import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -27,6 +28,7 @@ public final class VagAccessibilityService extends AccessibilityService {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private AgentHttpServer httpServer;
     private AgentRelayClient relayClient;
+    private PowerManager.WakeLock screenWakeLock;
     private long revision;
     private String eventPackage = "";
     private String eventClass = "";
@@ -39,6 +41,7 @@ public final class VagAccessibilityService extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
+        acquireScreenWakeLock();
         httpServer = new AgentHttpServer(this);
         httpServer.start();
         startRelayClient();
@@ -72,6 +75,7 @@ public final class VagAccessibilityService extends AccessibilityService {
     public boolean onUnbind(Intent intent) {
         stopHttpServer();
         stopRelayClient();
+        releaseScreenWakeLock();
         if (instance == this) {
             instance = null;
         }
@@ -85,6 +89,7 @@ public final class VagAccessibilityService extends AccessibilityService {
     public void onDestroy() {
         stopHttpServer();
         stopRelayClient();
+        releaseScreenWakeLock();
         if (instance == this) {
             instance = null;
         }
@@ -291,6 +296,34 @@ public final class VagAccessibilityService extends AccessibilityService {
         wakeLock.acquire(5_000);
         wakeLock.release();
         return power.isInteractive();
+    }
+
+    @SuppressLint("WakelockTimeout")
+    private void acquireScreenWakeLock() {
+        if (screenWakeLock != null && screenWakeLock.isHeld()) {
+            return;
+        }
+        PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
+        if (power == null) {
+            return;
+        }
+        screenWakeLock = power.newWakeLock(
+                PowerManager.SCREEN_DIM_WAKE_LOCK
+                        | PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "vagcompanion:keep-screen-awake");
+        screenWakeLock.setReferenceCounted(false);
+        screenWakeLock.acquire();
+    }
+
+    private void releaseScreenWakeLock() {
+        if (screenWakeLock != null && screenWakeLock.isHeld()) {
+            screenWakeLock.release();
+        }
+        screenWakeLock = null;
+    }
+
+    boolean isScreenWakeLockHeld() {
+        return screenWakeLock != null && screenWakeLock.isHeld();
     }
 
     String packageVersion(String packageName) {
