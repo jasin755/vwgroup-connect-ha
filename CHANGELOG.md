@@ -40,6 +40,11 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.3.3] - 2026-08-22 — skip unnecessary overview scroll
+
+### Changed
+- **Small display scaling avoids the overview swipe.** The driver first checks whether both Vehicle Health Report and Settings are already present in the active overview tree. On the live Pixel 4a's smallest display size they are fully visible, so no scroll gesture is sent. The upward swipe remains only as a fallback for larger Android display scaling.
+
 ## [4.3.2] - 2026-08-22 — grounded VW navigation controls
 
 ### Fixed

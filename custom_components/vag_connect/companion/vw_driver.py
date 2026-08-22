@@ -163,7 +163,13 @@ class VolkswagenAppDriver:
         raise CompanionTransportError("Volkswagen app: could not return to overview")
 
     async def _overview_scrolled(self) -> list[UiNode]:
-        await self.ensure_overview()
+        overview = await self.ensure_overview()
+        health_visible = find_by_desc(
+            overview, r"^Vehicle Health Report\. Open details$"
+        )
+        settings_visible = find_by_desc(overview, r"^Settings\. Open details$")
+        if health_visible is not None and settings_visible is not None:
+            return overview
         await self._t.swipe(540, 1900, 540, 850, 500)
         await self._settle()
         return await self._wait_for_nodes(

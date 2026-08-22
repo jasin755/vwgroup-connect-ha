@@ -246,6 +246,7 @@ class _DriverTransport:
         self.temperature = 22.0
         self.taps: list[tuple[int, int]] = []
         self.back_calls = 0
+        self.swipe_calls = 0
 
     async def connect(self) -> None:
         self.connected = True
@@ -263,6 +264,10 @@ class _DriverTransport:
         return _dump(
             _node(rid="rangeTile", bounds="[50,200][450,600]"),
             _node(rid="climateTile", bounds="[550,200][1000,600]"),
+            _node(
+                desc="Vehicle Health Report. Open details",
+                bounds="[50,800][1000,950]",
+            ),
             _node(
                 desc="Settings. Open details",
                 bounds="[50,1000][1000,1150]",
@@ -347,6 +352,7 @@ class _DriverTransport:
         y2: int,
         dur_ms: int = 300,
     ) -> None:  # noqa: ARG002
+        self.swipe_calls += 1
         if self.screen == "climate":
             self.temperature += 0.5 if x1 > x2 else -0.5
         return None
@@ -419,6 +425,14 @@ async def test_idless_top_left_vw_navigation_is_safe() -> None:
     nodes = await driver.ensure_overview()
     assert any(node.resource_id == "rangeTile" for node in nodes)
     assert transport.back_calls == 0
+
+
+async def test_small_display_uses_visible_overview_without_scroll() -> None:
+    transport = _DriverTransport()
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    nodes = await driver._overview_scrolled()
+    assert any(node.content_desc.startswith("Settings.") for node in nodes)
+    assert transport.swipe_calls == 0
 
 
 async def test_extended_option_rebuilds_companion_client() -> None:
