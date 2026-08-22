@@ -184,6 +184,14 @@ class AgentHttpTransport(NetworkAdbTransport):
             return None
         return version.strip() or None
 
+    async def device_battery_level(self, timeout_s: float = 10.0) -> int | None:
+        try:
+            raw = await self._request("GET", "/battery", timeout_s=timeout_s)
+            level = int(raw.strip())
+        except (CompanionTransportError, ValueError):
+            return None
+        return level if 0 <= level <= 100 else None
+
     async def tap(self, x: int, y: int, timeout_s: float = 10.0) -> None:
         await self._request(
             "POST",

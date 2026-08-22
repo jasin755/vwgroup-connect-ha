@@ -179,6 +179,19 @@ class NetworkAdbTransport:
                 return line.split("=", 1)[1].strip() or None
         return None
 
+    async def device_battery_level(self, timeout_s: float = 10.0) -> int | None:
+        """Read the Android device battery percentage on legacy ADB paths."""
+        out = await self.shell("dumpsys battery | grep 'level:'", timeout_s)
+        for line in (out or "").splitlines():
+            if "level:" not in line:
+                continue
+            try:
+                level = int(line.split("level:", 1)[1].strip())
+            except ValueError:
+                continue
+            return level if 0 <= level <= 100 else None
+        return None
+
     async def tap(self, x: int, y: int, timeout_s: float = 10.0) -> None:
         await self.shell(f"input tap {int(x)} {int(y)}", timeout_s)
         await asyncio.sleep(0.25)

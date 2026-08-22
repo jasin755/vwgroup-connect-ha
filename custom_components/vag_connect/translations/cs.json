@@ -493,6 +493,9 @@
       "data_source_channel": {
         "name": "Kanál zdroje dat"
       },
+      "companion_phone_battery_level": {
+        "name": "Baterie doprovodného telefonu"
+      },
       "error_reporter_count": {
         "name": "Hlásič chyb"
       },

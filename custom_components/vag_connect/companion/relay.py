@@ -43,7 +43,9 @@ class CompanionRelayBroker:
         self.last_seen: float = 0.0
         self.agent_version: str | None = None
         self.vw_version: str | None = None
+        self.phone_battery_level: int | None = None
         self.event_handler: Callable[[str, int], Awaitable[None]] | None = None
+        self.phone_battery_handler: Callable[[int], Awaitable[None]] | None = None
 
     @property
     def online(self) -> bool:
@@ -67,6 +69,22 @@ class CompanionRelayBroker:
         self.agent_version = str(payload.get("agent_version") or "") or None
         self.vw_version = str(payload.get("vw_version") or "") or None
         self._online_event.set()
+
+        raw_battery = payload.get("phone_battery_level")
+        if (
+            isinstance(raw_battery, int)
+            and not isinstance(raw_battery, bool)
+            and 0 <= raw_battery <= 100
+            and raw_battery != self.phone_battery_level
+        ):
+            self.phone_battery_level = raw_battery
+            if self.phone_battery_handler is not None:
+                try:
+                    await self.phone_battery_handler(raw_battery)
+                except Exception:  # noqa: BLE001 - health must not break commands
+                    _LOGGER.debug(
+                        "Companion phone battery update failed", exc_info=True
+                    )
 
         event_snapshot = payload.get("event_snapshot_b64")
         if payload.get("event_only") is True:
@@ -279,6 +297,10 @@ class AgentRelayTransport(NetworkAdbTransport):
             await self._broker.command("version", package=package),
         )
         return str(result.get("value") or "") or None
+
+    async def device_battery_level(self, timeout_s: float = 10.0) -> int | None:
+        del timeout_s
+        return self._broker.phone_battery_level
 
     async def tap(self, x: int, y: int, timeout_s: float = 10.0) -> None:
         self._require_ok(

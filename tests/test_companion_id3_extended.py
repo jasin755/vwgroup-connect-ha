@@ -696,6 +696,44 @@ async def test_event_overview_merges_individual_openings_without_poll() -> None:
     coordinator.async_set_updated_data.assert_called_once()
 
 
+async def test_phone_battery_heartbeat_updates_ha_without_vw_navigation() -> None:
+    from custom_components.vag_connect.const import STRATEGY_COMPANION_ADB
+    from custom_components.vag_connect.coordinator import VagConnectCoordinator
+
+    vin = "WVWZZZSYNTHETIC01"
+    coordinator = VagConnectCoordinator.__new__(VagConnectCoordinator)
+    coordinator.entry = MagicMock()
+    coordinator.entry.data = {
+        "strategy": STRATEGY_COMPANION_ADB,
+        "vin": vin,
+    }
+    coordinator._vehicles_lock = threading.Lock()
+    coordinator.vehicles = {vin: {"vin": vin}}
+    coordinator.async_set_updated_data = MagicMock()
+
+    await coordinator._async_companion_phone_battery(67)
+
+    assert coordinator.vehicles[vin]["companion_phone_battery_level"] == 67
+    coordinator.async_set_updated_data.assert_called_once()
+
+
+def test_phone_battery_sensor_is_diagnostic_and_phantom_gated() -> None:
+    from homeassistant.const import EntityCategory
+
+    from custom_components.vag_connect.sensor import (
+        SENSOR_DESCRIPTIONS,
+        _DATA_PRESENT_REQUIRED,
+    )
+
+    description = next(
+        item
+        for item in SENSOR_DESCRIPTIONS
+        if item.key == "companion_phone_battery_level"
+    )
+    assert description.entity_category is EntityCategory.DIAGNOSTIC
+    assert "companion_phone_battery_level" in _DATA_PRESENT_REQUIRED
+
+
 async def test_extended_refresh_finishes_with_fresh_overview_in_same_result() -> None:
     """Changes made while detail pages are open must not wait for another poll."""
     transport = MagicMock()

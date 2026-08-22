@@ -499,6 +499,9 @@
       "data_source_channel": {
         "name": "Canale sorgente dati"
       },
+      "companion_phone_battery_level": {
+        "name": "Batteria del telefono companion"
+      },
       "error_reporter_count": {
         "name": "Segnalatore errori"
       },

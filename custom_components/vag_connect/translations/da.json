@@ -499,6 +499,9 @@
       "data_source_channel": {
         "name": "Datakildekanal"
       },
+      "companion_phone_battery_level": {
+        "name": "Companiontelefonens batteri"
+      },
       "error_reporter_count": {
         "name": "Fejlrapportør"
       },

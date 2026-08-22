@@ -111,9 +111,12 @@ class TestCoercion:
 class _FakeTransport:
     """A transport stub: canned dump + version, records taps. No device."""
 
-    def __init__(self, *, version: str | None, dump: str) -> None:
+    def __init__(
+        self, *, version: str | None, dump: str, battery_level: int | None = None
+    ) -> None:
         self._version = version
         self._dump = dump
+        self._battery_level = battery_level
         self.taps: list[tuple[int, int]] = []
         self.connected = True
 
@@ -128,6 +131,9 @@ class _FakeTransport:
 
     async def dump_ui(self) -> str:
         return self._dump
+
+    async def device_battery_level(self) -> int | None:
+        return self._battery_level
 
     async def tap(self, x: int, y: int) -> None:
         self.taps.append((x, y))
@@ -179,6 +185,20 @@ def _writable_vw():
 
 
 class TestWriteQuarantine:
+    @pytest.mark.asyncio
+    async def test_phone_battery_is_added_without_parsing_the_vw_screen(self) -> None:
+        now, _ = _clock()
+        transport = _FakeTransport(
+            version="4.2.1", dump=VW_SCREEN, battery_level=67
+        )
+        channel = CompanionChannel(
+            transport, PRESETS["volkswagen"], time_fn=now
+        )
+
+        fields = await channel.read()
+
+        assert fields["companion_phone_battery_level"] == 67
+
     @pytest.mark.asyncio
     async def test_verified_matching_version_allows_a_tap(self) -> None:
         # Uses a synthetic WRITABLE preset: the shipped VW quarantines writes.

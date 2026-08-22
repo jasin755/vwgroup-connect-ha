@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Path;
+import android.os.BatteryManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -299,6 +300,19 @@ public final class VagAccessibilityService extends AccessibilityService {
         } catch (PackageManager.NameNotFoundException missing) {
             return "";
         }
+    }
+
+    int batteryLevel() {
+        BatteryManager battery = (BatteryManager) getSystemService(BATTERY_SERVICE);
+        if (battery == null) {
+            return -1;
+        }
+        return normalizeBatteryLevel(
+                battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY));
+    }
+
+    static int normalizeBatteryLevel(int level) {
+        return level >= 0 && level <= 100 ? level : -1;
     }
 
     void restartRelayClient() {

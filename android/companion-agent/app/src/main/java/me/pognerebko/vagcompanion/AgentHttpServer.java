@@ -162,6 +162,7 @@ final class AgentHttpServer implements AutoCloseable {
             if ("/snapshot".equals(path) || "/wait".equals(path)) {
                 snapshotCount.incrementAndGet();
             } else if (!"/health".equals(path)
+                    && !"/battery".equals(path)
                     && !"/version".equals(path)
                     && !"/foreground".equals(path)) {
                 actionCount.incrementAndGet();
@@ -181,7 +182,9 @@ final class AgentHttpServer implements AutoCloseable {
                                     + ",\"vw_version\":\""
                                     + jsonEscape(service.packageVersion(
                                             VagAccessibilityService.VOLKSWAGEN_PACKAGE))
-                                    + "\",\"requests\":"
+                                    + "\",\"phone_battery_level\":"
+                                    + service.batteryLevel()
+                                    + ",\"requests\":"
                                     + requestCount.get()
                                     + ",\"snapshots\":"
                                     + snapshotCount.get()
@@ -192,6 +195,15 @@ final class AgentHttpServer implements AutoCloseable {
                                     + "\",\"last_path\":\""
                                     + jsonEscape(lastNonHealthPath)
                                     + "\"}");
+                    return;
+                case "/battery":
+                    int batteryLevel = service.batteryLevel();
+                    write(
+                            client.getOutputStream(),
+                            batteryLevel >= 0 ? 200 : 503,
+                            batteryLevel >= 0
+                                    ? Integer.toString(batteryLevel)
+                                    : "battery_unavailable");
                     return;
                 case "/snapshot":
                     writeSnapshot(client.getOutputStream(), service.snapshot(2_000));

@@ -1523,6 +1523,9 @@ class VehicleData:
     # no sync line. Surfaced as a diagnostic so a stale car (working connector,
     # old backend data) is visible.
     companion_source_age_s: float | None = None
+    # v4.5.0 — battery percentage of the Android companion device itself,
+    # supplied locally by the Accessibility agent (never by Volkswagen).
+    companion_phone_battery_level: int | None = None
     # v2.18.0 (A2) — per-FIELD provenance: {field_name: channel} for every
     # field that actually carries a value, recorded by the channel-merge layer.
     # ``source_channel`` answers "which channels fed this car"; this answers

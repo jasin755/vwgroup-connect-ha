@@ -1,6 +1,7 @@
 package me.pognerebko.vagcompanion;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -19,5 +20,14 @@ public final class AgentHttpServerTest {
         assertFalse(AgentHttpServer.isValidToken("short"));
         assertFalse(AgentHttpServer.isValidToken(
                 "abcdefghijklmnopqrstuvwxyz0123456789'"));
+    }
+
+    @Test
+    public void validatesBatteryPercentage() {
+        assertEquals(0, VagAccessibilityService.normalizeBatteryLevel(0));
+        assertEquals(73, VagAccessibilityService.normalizeBatteryLevel(73));
+        assertEquals(100, VagAccessibilityService.normalizeBatteryLevel(100));
+        assertEquals(-1, VagAccessibilityService.normalizeBatteryLevel(-1));
+        assertEquals(-1, VagAccessibilityService.normalizeBatteryLevel(101));
     }
 }

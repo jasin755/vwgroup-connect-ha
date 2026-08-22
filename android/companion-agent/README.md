@@ -74,6 +74,7 @@ enabled AccessibilityService, provided it is signed with the same key.
 Read endpoints:
 
 - `GET /health`
+- `GET /battery` — Android device battery percentage
 - `GET /snapshot` — base64-encoded uiautomator-compatible XML
 - `GET /snapshot-active` — explicit active-window snapshot used only for the
   Android share sheet after the agent itself selected Share

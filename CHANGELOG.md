@@ -40,6 +40,11 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.5.0] - 2026-08-22 — Android companion battery diagnostic
+
+### Added
+- **Companion phone battery sensor.** Android Agent 0.5.0 reads its own battery percentage locally through `BatteryManager` and includes it in every outbound relay heartbeat. Companion entries expose the value as the diagnostic `Companion phone battery` sensor (`%`, battery device class), suitable for controlling a smart plug without Wireless Debugging or Volkswagen-app navigation. Battery changes reach HA independently of the vehicle polling/navigation cycle.
+
 ## [4.4.2] - 2026-08-22 — close all event clears opening state
 
 ### Fixed

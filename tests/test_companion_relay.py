@@ -124,3 +124,38 @@ async def test_event_only_snapshot_calls_handler_without_long_polling() -> None:
     })
     assert command is None
     assert received == [(_XML, 42)]
+
+
+@pytest.mark.asyncio
+async def test_phone_battery_heartbeat_updates_handler_and_transport() -> None:
+    broker = CompanionRelayBroker("entry", _TOKEN)
+    received: list[int] = []
+
+    async def handler(level: int) -> None:
+        received.append(level)
+
+    broker.phone_battery_handler = handler
+    poll = asyncio.create_task(broker.handle_poll({
+        "agent_version": "0.5.0",
+        "vw_version": "4.3.2",
+        "phone_battery_level": 67,
+    }))
+    await asyncio.sleep(0)
+
+    transport = AgentRelayTransport(broker)
+    assert received == [67]
+    assert await transport.device_battery_level() == 67
+    await _cancel(poll)
+
+
+@pytest.mark.asyncio
+async def test_invalid_phone_battery_heartbeat_is_ignored() -> None:
+    broker = CompanionRelayBroker("entry", _TOKEN)
+    poll = asyncio.create_task(broker.handle_poll({
+        "agent_version": "0.5.0",
+        "phone_battery_level": 101,
+    }))
+    await asyncio.sleep(0)
+
+    assert broker.phone_battery_level is None
+    await _cancel(poll)

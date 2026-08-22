@@ -1108,6 +1108,9 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             )
             if relay_broker is not None:
                 relay_broker.event_handler = self._async_companion_event_snapshot
+                relay_broker.phone_battery_handler = (
+                    self._async_companion_phone_battery
+                )
             # v2.26.0 (ckomma #21) — re-apply a rate-limit backoff persisted
             # before a restart, so an account lockout is not cleared just by
             # restarting HA.
@@ -6209,6 +6212,26 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             revision,
             len(fields),
         )
+
+    async def _async_companion_phone_battery(self, level: int) -> None:
+        """Push the Android companion battery heartbeat into HA immediately."""
+        if not self.is_companion() or not 0 <= level <= 100:
+            return
+        from .const import CONF_VIN  # noqa: PLC0415
+
+        vin = str(self.entry.data.get(CONF_VIN, "")).upper()
+        if not vin:
+            return
+        with self._vehicles_lock:
+            existing = self.vehicles.get(vin)
+            if existing is None:
+                return  # the initial status poll owns VehicleData creation
+            if existing.get("companion_phone_battery_level") == level:
+                return
+            updated = dict(existing)
+            updated["companion_phone_battery_level"] = level
+            self.vehicles[vin] = updated
+        self.async_set_updated_data(dict(self.vehicles))
 
     def is_companion(self) -> bool:
         """v2.26.0 — True if this entry reads via the companion (ADB) channel."""

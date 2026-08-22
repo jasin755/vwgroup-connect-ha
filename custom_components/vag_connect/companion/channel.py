@@ -289,6 +289,15 @@ class CompanionChannel:
                 fields.setdefault(key, val)
             if self.nav_reads_enabled and self._nav_due():
                 await self._augment_via_nav(fields)
+        phone_battery = None
+        battery_reader = getattr(self._t, "device_battery_level", None)
+        if callable(battery_reader):
+            try:
+                phone_battery = await battery_reader()
+            except CompanionTransportError:
+                pass
+        if phone_battery is not None:
+            fields["companion_phone_battery_level"] = phone_battery
         return fields
 
     async def _augment_via_nav(self, fields: dict[str, object]) -> None:

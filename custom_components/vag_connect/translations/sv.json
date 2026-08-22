@@ -493,6 +493,9 @@
       "data_source_channel": {
         "name": "Datakällkanal"
       },
+      "companion_phone_battery_level": {
+        "name": "Batteri i följeslagartelefon"
+      },
       "error_reporter_count": {
         "name": "Felrapportör"
       },

@@ -499,6 +499,9 @@
       "data_source_channel": {
         "name": "Datalähdekanava"
       },
+      "companion_phone_battery_level": {
+        "name": "Kumppanipuhelimen akku"
+      },
       "error_reporter_count": {
         "name": "Virheraportoija"
       },

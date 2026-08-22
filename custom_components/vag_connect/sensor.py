@@ -99,6 +99,16 @@ SENSOR_DESCRIPTIONS: tuple[VagSensorDescription, ...] = (
         condition="electric",
     ),
     VagSensorDescription(
+        key="companion_phone_battery_level",
+        translation_key="companion_phone_battery_level",
+        data_key="companion_phone_battery_level",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:cellphone-charging",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    VagSensorDescription(
         key="range_km",
         translation_key="range_km",
         data_key="range_km",
@@ -3315,6 +3325,7 @@ _DATA_PRESENT_REQUIRED: frozenset[str] = frozenset({
     # b1/C1 — provenance sensor only spawns when a multi-channel merge set
     # source_channel (None on single-channel entries).
     "data_source_channel",
+    "companion_phone_battery_level",
     "electric_range_km",
     "combustion_range_km",
     "total_range_km",

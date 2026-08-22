@@ -508,6 +508,9 @@
       "data_source_channel": {
         "name": "Datenquelle (Kanal)"
       },
+      "companion_phone_battery_level": {
+        "name": "Begleittelefon-Akku"
+      },
       "error_reporter_count": {
         "name": "Fehler-Berichter"
       },

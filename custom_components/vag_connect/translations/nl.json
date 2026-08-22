@@ -493,6 +493,9 @@
       "data_source_channel": {
         "name": "Gegevensbronkanaal"
       },
+      "companion_phone_battery_level": {
+        "name": "Batterij van begeleidende telefoon"
+      },
       "error_reporter_count": {
         "name": "Foutmelder"
       },

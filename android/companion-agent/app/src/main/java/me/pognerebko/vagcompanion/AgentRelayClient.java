@@ -93,6 +93,7 @@ final class AgentRelayClient implements AutoCloseable {
                             .put("agent_version", packageVersion())
                             .put("vw_version", service.packageVersion(
                                     VagAccessibilityService.VOLKSWAGEN_PACKAGE))
+                            .put("phone_battery_level", service.batteryLevel())
                             .put("event_only", true)
                             .put("revision", revision)
                             .put(
@@ -131,7 +132,8 @@ final class AgentRelayClient implements AutoCloseable {
                 JSONObject payload = new JSONObject()
                         .put("agent_version", packageVersion())
                         .put("vw_version", service.packageVersion(
-                                VagAccessibilityService.VOLKSWAGEN_PACKAGE));
+                                VagAccessibilityService.VOLKSWAGEN_PACKAGE))
+                        .put("phone_battery_level", service.batteryLevel());
                 if (pendingResult != null) {
                     payload.put("result", pendingResult);
                 }
@@ -233,6 +235,12 @@ final class AgentRelayClient implements AutoCloseable {
                             service.packageVersion(params.optString(
                                     "package",
                                     VagAccessibilityService.VOLKSWAGEN_PACKAGE)));
+                case "battery":
+                    int batteryLevel = service.batteryLevel();
+                    return result.put(
+                                    "status", batteryLevel >= 0 ? "ok" : "error")
+                            .put("value", batteryLevel)
+                            .put("error", batteryLevel >= 0 ? "" : "battery unavailable");
                 default:
                     return result.put("status", "error")
                             .put("error", "unknown action");

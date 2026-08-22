@@ -100,6 +100,25 @@ async def test_agent_error_is_visible_without_uiautomator_fallback() -> None:
 
 
 @pytest.mark.asyncio
+async def test_phone_battery_uses_local_agent_endpoint() -> None:
+    session = _Session([
+        _Resp(
+            200,
+            '{"status":"ok","revision":1,"vw_version":"4.3.2",'
+            '"phone_battery_level":67}',
+        ),
+        _Resp(200, "67"),
+    ])
+    transport = AgentHttpTransport(
+        "192.168.1.42", 8765, token=_TOKEN, session=session
+    )
+    await transport.connect()
+
+    assert await transport.device_battery_level() == 67
+    assert session.calls[-1][1].endswith("/battery")
+
+
+@pytest.mark.asyncio
 async def test_actions_use_agent_endpoints() -> None:
     session = _Session([
         _Resp(200, '{"status":"ok","revision":1,"vw_version":"4.3.2"}'),
