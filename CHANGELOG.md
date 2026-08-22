@@ -40,6 +40,11 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.4.2] - 2026-08-22 — close all event clears opening state
+
+### Fixed
+- **Closing the last open element now clears HA immediately.** We Connect removes the entire vehicle-alert ImageView when all doors, windows, boot, bonnet and lights are closed/off. The event parser previously treated that missing node as an incomplete snapshot and retained the last open state. Its absence is now accepted as the grounded all-closed state only when both overview tiles and the vehicle header prove that the full overview is present; loading/detail snapshots still cannot erase known data.
+
 ## [4.4.1] - 2026-08-22 — lossless extended refresh and conservation charging
 
 ### Fixed

@@ -392,6 +392,43 @@ def test_open_bonnet_and_open_windows_with_lights_off() -> None:
     assert got["lights_count"] == 0
 
 
+def test_complete_overview_without_alert_image_means_everything_closed() -> None:
+    """The alert ImageView is absent, rather than empty, when all are closed."""
+    nodes = parse_ui_dump(
+        _dump(
+            _node(rid="rangeTile"),
+            _node(rid="climateTile"),
+            _node(
+                desc=(
+                    "Your vehicle: ID.3 Pro Performance. Vehicle is locked. "
+                    "Synchronised just now"
+                )
+            ),
+        )
+    )
+
+    got = parse_overview_openings(nodes)
+
+    assert got["doors_individual"] == dict.fromkeys(
+        ("frontLeft", "frontRight", "rearLeft", "rearRight"), False
+    )
+    assert got["windows_individual"] == dict.fromkeys(
+        ("frontLeft", "frontRight", "rearLeft", "rearRight"), True
+    )
+    assert got["doors_open"] is False
+    assert got["windows_open"] is False
+    assert got["trunk_open"] is False
+    assert got["hood_open"] is False
+    assert got["lights_on"] is False
+    assert got["lights_count"] == 0
+
+
+def test_incomplete_tree_without_alert_image_does_not_erase_openings() -> None:
+    assert parse_overview_openings(
+        parse_ui_dump(_dump(_node(rid="rangeTile"), _node(rid="climateTile")))
+    ) == {}
+
+
 class _DriverTransport:
     """Small state machine for command-flow tests; never touches a real car."""
 

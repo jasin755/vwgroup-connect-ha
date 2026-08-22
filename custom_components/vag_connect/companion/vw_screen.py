@@ -276,10 +276,11 @@ def parse_overview_charging(nodes: list[UiNode]) -> dict[str, object]:
 def parse_overview_openings(nodes: list[UiNode]) -> dict[str, object]:
     """Read per-door/window/boot state from the hidden vehicle-image semantics.
 
-    We Connect lists only OPEN elements in one content-description. Absence is
-    therefore a grounded closed state, but only after finding the dedicated
-    image node whose description begins ``Vehicle is ...``; the similarly
-    worded ``Your vehicle: ...`` header is not sufficient evidence.
+    We Connect lists only OPEN elements in one ImageView content-description.
+    When everything is closed/off that ImageView disappears completely. Treat
+    its absence as the grounded negative state only on a complete overview
+    (both tiles plus the ``Your vehicle:`` header); a loading/detail tree still
+    returns no fields and therefore cannot erase last-known-good state.
     """
     status = next(
         (
@@ -290,7 +291,13 @@ def parse_overview_openings(nodes: list[UiNode]) -> dict[str, object]:
         "",
     )
     if not status:
-        return {}
+        complete_overview = (
+            find_by_rid(nodes, "rangeTile") is not None
+            and find_by_rid(nodes, "climateTile") is not None
+            and find_by_desc(nodes, r"^Your vehicle:") is not None
+        )
+        if not complete_overview:
+            return {}
     lowered = status.casefold()
     doors = {
         key: f"{label} door".casefold() in lowered
