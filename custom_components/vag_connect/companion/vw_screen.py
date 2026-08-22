@@ -210,3 +210,59 @@ def parse_shared_location(nodes: list[UiNode]) -> dict[str, object]:
                 "longitude": float(match.group(2)),
             }
     return {}
+
+
+_OPENING_TOKENS: dict[str, str] = {
+    "frontLeft": "Front left-side",
+    "frontRight": "Front right-side",
+    "rearLeft": "Rear left-side",
+    "rearRight": "Rear right-side",
+}
+
+
+def parse_overview_openings(nodes: list[UiNode]) -> dict[str, object]:
+    """Read per-door/window/boot state from the hidden vehicle-image semantics.
+
+    We Connect lists only OPEN elements in one content-description. Absence is
+    therefore a grounded closed state, but only after finding the dedicated
+    image node whose description begins ``Vehicle is ...``; the similarly
+    worded ``Your vehicle: ...`` header is not sufficient evidence.
+    """
+    status = next(
+        (
+            node.content_desc
+            for node in nodes
+            if node.content_desc.startswith("Vehicle is ")
+        ),
+        "",
+    )
+    if not status:
+        return {}
+    lowered = status.casefold()
+    doors = {
+        key: f"{label} door".casefold() in lowered
+        for key, label in _OPENING_TOKENS.items()
+    }
+    # Existing model convention is True == CLOSED for windows; the entity
+    # layer inverts it so BinarySensor.is_on means open.
+    windows = {
+        key: f"{label} window".casefold() not in lowered
+        for key, label in _OPENING_TOKENS.items()
+    }
+    lights = {
+        key: f"{label} light".casefold() in lowered
+        for key, label in _OPENING_TOKENS.items()
+    }
+    trunk_open = "boot" in lowered or "trunk" in lowered
+    hood_open = "bonnet" in lowered or "hood" in lowered
+    return {
+        "doors_individual": doors,
+        "windows_individual": windows,
+        "doors_open": any(doors.values()),
+        "windows_open": any(not closed for closed in windows.values()),
+        "trunk_open": trunk_open,
+        "hood_open": hood_open,
+        "lights_individual": lights,
+        "lights_on": any(lights.values()),
+        "lights_count": sum(lights.values()),
+    }

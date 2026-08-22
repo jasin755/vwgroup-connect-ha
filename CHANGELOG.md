@@ -40,6 +40,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.4.0] - 2026-08-22 — event-driven overview and individual openings
+
+### Added
+- **Near-real-time companion overview push.** Android agent 0.4.0 debounces Volkswagen Accessibility events and sends a fresh overview snapshot through the existing outbound HTTPS relay. Home Assistant merges overview fields immediately without starting a full poll or navigation run. Detail-only settings, health and GPS retain their planned cadence.
+- **Individual doors, windows, boot, bonnet and lights.** The hidden vehicle-image semantics names every currently open/switched-on element even when the visual car is entirely red. The companion parser now populates all four `doors_individual`, all four `windows_individual`, `trunk_open`, `hood_open`, all four `lights_individual`, plus their aggregate/count fields. Existing translated dynamic binary sensors are reused.
+
 ## [4.3.3] - 2026-08-22 — skip unnecessary overview scroll
 
 ### Changed

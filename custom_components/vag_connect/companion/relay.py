@@ -15,6 +15,7 @@ import hmac
 import logging
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 from homeassistant.components.http import HomeAssistantView
@@ -42,6 +43,7 @@ class CompanionRelayBroker:
         self.last_seen: float = 0.0
         self.agent_version: str | None = None
         self.vw_version: str | None = None
+        self.event_handler: Callable[[str, int], Awaitable[None]] | None = None
 
     @property
     def online(self) -> bool:
@@ -65,6 +67,18 @@ class CompanionRelayBroker:
         self.agent_version = str(payload.get("agent_version") or "") or None
         self.vw_version = str(payload.get("vw_version") or "") or None
         self._online_event.set()
+
+        event_snapshot = payload.get("event_snapshot_b64")
+        if payload.get("event_only") is True:
+            if isinstance(event_snapshot, str) and self.event_handler is not None:
+                try:
+                    xml = base64.b64decode(event_snapshot, validate=True).decode("utf-8")
+                    await self.event_handler(xml, int(payload.get("revision") or 0))
+                except Exception:  # noqa: BLE001 - untrusted phone payload
+                    _LOGGER.debug("Companion event snapshot was invalid", exc_info=True)
+            # Never let a fire-and-forget UI event consume a queued command;
+            # the agent's dedicated long-poll collects it.
+            return None
 
         result = payload.get("result")
         if isinstance(result, dict):

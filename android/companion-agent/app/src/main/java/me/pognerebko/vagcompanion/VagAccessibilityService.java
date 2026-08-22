@@ -42,6 +42,9 @@ public final class VagAccessibilityService extends AccessibilityService {
         httpServer.start();
         startRelayClient();
         bumpRevision(VOLKSWAGEN_PACKAGE, "service-connected");
+        if (relayClient != null) {
+            relayClient.onAccessibilityChanged(getRevision());
+        }
     }
 
     @Override
@@ -52,6 +55,9 @@ public final class VagAccessibilityService extends AccessibilityService {
         CharSequence packageName = event.getPackageName();
         if (packageName != null && VOLKSWAGEN_PACKAGE.contentEquals(packageName)) {
             bumpRevision(packageName.toString(), chars(event.getClassName()));
+            if (relayClient != null) {
+                relayClient.onAccessibilityChanged(getRevision());
+            }
         }
     }
 

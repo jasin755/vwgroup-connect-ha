@@ -271,6 +271,10 @@ class CompanionChannel:
         self._consecutive_failures = 0
         self._source_data_age_s = find_sync_age(nodes, self._preset)
         fields = read_fields(nodes, self._preset)
+        if self._preset.driver == "volkswagen_4_3_2":
+            from .vw_screen import parse_overview_openings  # noqa: PLC0415
+
+            fields.update(parse_overview_openings(nodes))
         # v2.26.0 (C9) — values behind a detail screen (charge target/power/time
         # on VW) are read by tapping a tile, reading, and coming BACK. Re-apply
         # the cached detail values every poll so the sensors don't flap between

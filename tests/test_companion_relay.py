@@ -104,3 +104,23 @@ async def test_failed_agent_action_is_not_hidden() -> None:
     with pytest.raises(CompanionTransportError, match="gesture rejected"):
         await tap_task
     await _cancel(finish_poll)
+
+
+@pytest.mark.asyncio
+async def test_event_only_snapshot_calls_handler_without_long_polling() -> None:
+    broker = CompanionRelayBroker("entry", _TOKEN)
+    received: list[tuple[str, int]] = []
+
+    async def handler(xml: str, revision: int) -> None:
+        received.append((xml, revision))
+
+    broker.event_handler = handler
+    command = await broker.handle_poll({
+        "agent_version": "0.4.0",
+        "vw_version": "4.3.2",
+        "event_only": True,
+        "revision": 42,
+        "event_snapshot_b64": base64.b64encode(_XML.encode()).decode(),
+    })
+    assert command is None
+    assert received == [(_XML, 42)]

@@ -1106,6 +1106,8 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 session=session,
                 relay_broker=relay_broker,
             )
+            if relay_broker is not None:
+                relay_broker.event_handler = self._async_companion_event_snapshot
             # v2.26.0 (ckomma #21) — re-apply a rate-limit backoff persisted
             # before a restart, so an account lockout is not cleared just by
             # restarting HA.
@@ -6141,6 +6143,70 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             )
         except Exception:  # noqa: BLE001
             pass
+
+    async def _async_companion_event_snapshot(
+        self, xml: str, revision: int
+    ) -> None:
+        """Merge an event-driven Volkswagen overview snapshot into HA state."""
+        if not self.is_companion():
+            return
+        from .companion.presets import PRESETS  # noqa: PLC0415
+        from .companion.screen import (  # noqa: PLC0415
+            find_sync_age,
+            parse_ui_dump,
+            read_fields,
+        )
+        from .companion.vw_screen import (  # noqa: PLC0415
+            find_by_rid,
+            parse_overview_openings,
+        )
+        from .const import CONF_VIN  # noqa: PLC0415
+
+        preset = PRESETS.get(str(self.entry.data.get(CONF_BRAND, "")).lower())
+        if preset is None or preset.driver != "volkswagen_4_3_2":
+            return
+        nodes = parse_ui_dump(xml)
+        if (
+            find_by_rid(nodes, "rangeTile") is None
+            or find_by_rid(nodes, "climateTile") is None
+        ):
+            return  # detail/splash animations are not overview state
+        fields = read_fields(nodes, preset)
+        fields.update(parse_overview_openings(nodes))
+        vin = str(self.entry.data.get(CONF_VIN, "")).upper()
+        if not vin or not fields:
+            return
+        with self._vehicles_lock:
+            existing = self.vehicles.get(vin)
+            if existing is None:
+                return  # initial setup poll owns first VehicleData creation
+            updated = dict(existing)
+            updated.update(fields)
+            if updated.get("electric_range_km") is not None:
+                updated["range_km"] = updated["electric_range_km"]
+            if any(
+                updated.get(key) is not None
+                for key in (
+                    "battery_soc",
+                    "electric_range_km",
+                    "charging_state",
+                    "is_charging",
+                )
+            ):
+                updated["has_battery"] = True
+                updated["is_electric"] = not bool(updated.get("has_combustion"))
+            updated["source_channel"] = "companion_relay"
+            age = find_sync_age(nodes, preset)
+            if age is not None:
+                updated["companion_source_age_s"] = age
+            self.vehicles[vin] = self._apply_optimistic_hold(vin, updated)
+            self.vehicle_last_good_at[vin] = datetime.now(timezone.utc)
+        self.async_set_updated_data(dict(self.vehicles))
+        _LOGGER.debug(
+            "Companion overview event revision %d merged (%d fields)",
+            revision,
+            len(fields),
+        )
 
     def is_companion(self) -> bool:
         """v2.26.0 — True if this entry reads via the companion (ADB) channel."""

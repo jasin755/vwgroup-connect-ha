@@ -10,6 +10,10 @@ Wireless Debugging can be disabled after installation and provisioning. The
 phone does not need a fixed address or an inbound firewall/VLAN rule. The local
 port `8765` remains available for trusted-LAN diagnostics.
 
+Volkswagen accessibility changes are debounced for 300 ms and pushed as
+overview snapshots over the relay. Home Assistant ignores detail/splash trees,
+so only complete overview state produces an event-driven entity update.
+
 ## Security model
 
 - The API listens on the phone's LAN interfaces and requires `X-Token` on every

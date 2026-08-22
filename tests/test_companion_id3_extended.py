@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
+import threading
 
 import pytest
 
@@ -17,6 +18,7 @@ from custom_components.vag_connect.companion.vw_screen import (
     parse_climate,
     parse_climate_settings,
     parse_shared_location,
+    parse_overview_openings,
     parse_vehicle_health,
     parse_vehicle_settings,
     parse_zones,
@@ -231,6 +233,78 @@ def test_active_charging_reads_from_soc_narration() -> None:
     assert got["battery_soc"] == 46
     assert got["charging_state"] == "CHARGING"
     assert got["is_charging"] is True
+
+
+def test_all_open_vehicle_semantics_maps_individual_openings() -> None:
+    nodes = parse_ui_dump(_dump(_node(desc=(
+        "Vehicle is unlocked. Something is still open or switched on:. "
+        "Boot. Bonnet. Rear right-side door. Rear left-side door. "
+        "Front right-side door. Front left-side door. "
+        "Front left-side window. Front right-side window. "
+        "Rear left-side window. Rear right-side window."
+        " Front left-side light. Front right-side light."
+        " Rear left-side light. Rear right-side light."
+    ))))
+    got = parse_overview_openings(nodes)
+    assert got["doors_individual"] == {
+        "frontLeft": True,
+        "frontRight": True,
+        "rearLeft": True,
+        "rearRight": True,
+    }
+    assert got["windows_individual"] == {
+        "frontLeft": False,
+        "frontRight": False,
+        "rearLeft": False,
+        "rearRight": False,
+    }
+    assert got["trunk_open"] is True
+    assert got["hood_open"] is True
+    assert got["lights_individual"] == dict.fromkeys(
+        ("frontLeft", "frontRight", "rearLeft", "rearRight"), True
+    )
+    assert got["lights_on"] is True
+    assert got["lights_count"] == 4
+
+
+def test_closed_doors_and_boot_keep_open_windows_distinct() -> None:
+    nodes = parse_ui_dump(_dump(_node(desc=(
+        "Vehicle is unlocked. Something is still open or switched on:. "
+        "Front left-side window. Front right-side window. "
+        "Rear left-side window. Rear right-side window."
+        " Front left-side light. Front right-side light."
+        " Rear left-side light. Rear right-side light."
+    ))))
+    got = parse_overview_openings(nodes)
+    assert got["doors_individual"] == dict.fromkeys(
+        ("frontLeft", "frontRight", "rearLeft", "rearRight"), False
+    )
+    assert got["windows_individual"] == dict.fromkeys(
+        ("frontLeft", "frontRight", "rearLeft", "rearRight"), False
+    )
+    assert got["doors_open"] is False
+    assert got["windows_open"] is True
+    assert got["trunk_open"] is False
+    assert got["hood_open"] is False
+    assert got["lights_count"] == 4
+
+
+def test_open_bonnet_and_open_windows_with_lights_off() -> None:
+    nodes = parse_ui_dump(_dump(_node(desc=(
+        "Vehicle is unlocked. Something is still open or switched on:. "
+        "Bonnet. Front left-side window. Front right-side window. "
+        "Rear left-side window. Rear right-side window."
+    ))))
+    got = parse_overview_openings(nodes)
+    assert got["hood_open"] is True
+    assert got["trunk_open"] is False
+    assert got["doors_open"] is False
+    assert got["windows_open"] is True
+    assert got["lights_individual"] == dict.fromkeys(
+        ("frontLeft", "frontRight", "rearLeft", "rearRight"), False
+    )
+    assert got["lights_on"] is False
+    assert got["lights_count"] == 0
 
 
 class _DriverTransport:
@@ -455,3 +529,41 @@ async def test_extended_option_rebuilds_companion_client() -> None:
         options={},
     )
     hass.config_entries.async_reload.assert_awaited_once_with("entry-id")
+
+
+async def test_event_overview_merges_individual_openings_without_poll() -> None:
+    from custom_components.vag_connect.const import STRATEGY_COMPANION_ADB
+    from custom_components.vag_connect.coordinator import VagConnectCoordinator
+
+    vin = "WVWZZZSYNTHETIC01"
+    coordinator = VagConnectCoordinator.__new__(VagConnectCoordinator)
+    coordinator.entry = MagicMock()
+    coordinator.entry.data = {
+        "brand": "volkswagen",
+        "strategy": STRATEGY_COMPANION_ADB,
+        "vin": vin,
+    }
+    coordinator._vehicles_lock = threading.Lock()
+    coordinator.vehicles = {vin: {"vin": vin, "battery_soc": 50}}
+    coordinator.vehicle_last_good_at = {}
+    coordinator.async_set_updated_data = MagicMock()
+    xml = _dump(
+        _node(rid="rangeTile"),
+        _node(rid="climateTile"),
+        _node(desc=(
+            "Vehicle is unlocked. Something is still open or switched on:. "
+            "Boot. Front left-side door. Rear right-side window. "
+            "Front left-side light."
+        )),
+    )
+
+    await coordinator._async_companion_event_snapshot(xml, 77)
+
+    updated = coordinator.vehicles[vin]
+    assert updated["doors_individual"]["frontLeft"] is True
+    assert updated["doors_individual"]["frontRight"] is False
+    assert updated["windows_individual"]["rearRight"] is False
+    assert updated["trunk_open"] is True
+    assert updated["lights_individual"]["frontLeft"] is True
+    assert updated["lights_count"] == 1
+    coordinator.async_set_updated_data.assert_called_once()

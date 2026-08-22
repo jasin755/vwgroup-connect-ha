@@ -15,6 +15,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Long-polls Home Assistant so normal operation never depends on inbound
  * phone routing, a fixed phone address, or Wireless ADB. */
@@ -25,6 +29,9 @@ final class AgentRelayClient implements AutoCloseable {
     private static final String KEY_CHANNEL = "channel";
 
     private final VagAccessibilityService service;
+    private final ExecutorService eventExecutor = Executors.newSingleThreadExecutor();
+    private final AtomicBoolean eventPushScheduled = new AtomicBoolean();
+    private final AtomicLong latestAccessibilityRevision = new AtomicLong();
     private volatile boolean running;
     private Thread thread;
 
@@ -59,9 +66,61 @@ final class AgentRelayClient implements AutoCloseable {
     @Override
     public void close() {
         running = false;
+        eventExecutor.shutdownNow();
         if (thread != null) {
             thread.interrupt();
             thread = null;
+        }
+    }
+
+    void onAccessibilityChanged(long revision) {
+        latestAccessibilityRevision.set(revision);
+        if (!running || !eventPushScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        eventExecutor.execute(this::pushDebouncedSnapshot);
+    }
+
+    private void pushDebouncedSnapshot() {
+        long sentRevision = -1;
+        try {
+            while (running) {
+                Thread.sleep(300);
+                long revision = latestAccessibilityRevision.get();
+                VagAccessibilityService.Snapshot snapshot = service.snapshot(3_000);
+                if ("ok".equals(snapshot.status)) {
+                    JSONObject payload = new JSONObject()
+                            .put("agent_version", packageVersion())
+                            .put("vw_version", service.packageVersion(
+                                    VagAccessibilityService.VOLKSWAGEN_PACKAGE))
+                            .put("event_only", true)
+                            .put("revision", revision)
+                            .put(
+                                    "event_snapshot_b64",
+                                    Base64.encodeToString(
+                                            snapshot.xml.getBytes(StandardCharsets.UTF_8),
+                                            Base64.NO_WRAP));
+                    post(payload);
+                    sentRevision = revision;
+                }
+                if (latestAccessibilityRevision.get() == revision) {
+                    break;
+                }
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } catch (Exception error) {
+            Log.d(TAG, "Event snapshot retry after " + error.getClass().getSimpleName());
+            try {
+                Thread.sleep(2_000);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        } finally {
+            eventPushScheduled.set(false);
+            if (running && latestAccessibilityRevision.get() > sentRevision) {
+                onAccessibilityChanged(latestAccessibilityRevision.get());
+            }
         }
     }
 
