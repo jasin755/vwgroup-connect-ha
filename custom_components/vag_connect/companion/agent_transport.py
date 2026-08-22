@@ -132,8 +132,14 @@ class AgentHttpTransport(NetworkAdbTransport):
         )
 
     async def dump_ui(self, timeout_s: float = 15.0) -> str:
+        return await self._dump_endpoint("/snapshot", timeout_s)
+
+    async def dump_active_ui(self, timeout_s: float = 15.0) -> str:
+        return await self._dump_endpoint("/snapshot-active", timeout_s)
+
+    async def _dump_endpoint(self, endpoint: str, timeout_s: float) -> str:
         encoded = (await self._request(
-            "GET", "/snapshot", timeout_s=timeout_s
+            "GET", endpoint, timeout_s=timeout_s
         )).strip()
         try:
             xml = base64.b64decode(encoded, validate=True).decode("utf-8")

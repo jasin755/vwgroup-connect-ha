@@ -133,19 +133,10 @@ final class AgentRelayClient implements AutoCloseable {
         JSONObject result = putNoThrow(new JSONObject(), "id", id);
         try {
             switch (action) {
-                case "snapshot": {
-                    VagAccessibilityService.Snapshot snapshot = service.snapshot(3_000);
-                    result.put("status", snapshot.status);
-                    result.put("revision", snapshot.revision);
-                    if (!snapshot.xml.isEmpty()) {
-                        result.put(
-                                "xml_b64",
-                                Base64.encodeToString(
-                                        snapshot.xml.getBytes(StandardCharsets.UTF_8),
-                                        Base64.NO_WRAP));
-                    }
-                    return result;
-                }
+                case "snapshot":
+                    return snapshotResult(result, service.snapshot(3_000));
+                case "snapshot_active":
+                    return snapshotResult(result, service.snapshotActive(3_000));
                 case "tap":
                     return accepted(result, service.tap(
                             params.optInt("x", -1), params.optInt("y", -1), 3_000));
@@ -191,6 +182,21 @@ final class AgentRelayClient implements AutoCloseable {
             putNoThrow(result, "status", "error");
             return putNoThrow(result, "error", error.getClass().getSimpleName());
         }
+    }
+
+    private static JSONObject snapshotResult(
+            JSONObject result, VagAccessibilityService.Snapshot snapshot)
+            throws JSONException {
+        result.put("status", snapshot.status);
+        result.put("revision", snapshot.revision);
+        if (!snapshot.xml.isEmpty()) {
+            result.put(
+                    "xml_b64",
+                    Base64.encodeToString(
+                            snapshot.xml.getBytes(StandardCharsets.UTF_8),
+                            Base64.NO_WRAP));
+        }
+        return result;
     }
 
     private static JSONObject accepted(JSONObject result, boolean accepted)

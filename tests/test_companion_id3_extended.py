@@ -309,15 +309,20 @@ class _DriverTransport:
     async def dump_ui(self) -> str:
         if self.screen == "loading":
             return _dump(_node(text="Loading"))
+        if self.screen == "zones":
+            return _dump(_node(clickable=True, bounds="[22,136][154,268]"))
         if self.screen == "climate":
             return self._climate()
         if self.screen == "settings":
             return self._settings()
         return self._overview()
 
+    async def dump_active_ui(self) -> str:
+        return await self.dump_ui()
+
     async def tap(self, x: int, y: int) -> None:
         self.taps.append((x, y))
-        if self.screen != "overview" and x <= 120 and y <= 120:
+        if self.screen != "overview" and x <= 120 and y <= 300:
             self.screen = "overview"
         elif self.screen == "overview" and x > 500 and y < 700:
             self.screen = "climate"
@@ -404,6 +409,15 @@ async def test_unknown_loading_screen_never_global_backs_out_of_app() -> None:
     driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
     with pytest.raises(CompanionTransportError, match="could not return"):
         await driver.ensure_overview()
+    assert transport.back_calls == 0
+
+
+async def test_idless_top_left_vw_navigation_is_safe() -> None:
+    transport = _DriverTransport()
+    transport.screen = "zones"
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    nodes = await driver.ensure_overview()
+    assert any(node.resource_id == "rangeTile" for node in nodes)
     assert transport.back_calls == 0
 
 

@@ -10,8 +10,8 @@ android {
         applicationId = "me.pognerebko.vagcompanion"
         minSdk = 28
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.2.1"
+        versionCode = 5
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
     }

@@ -44,6 +44,54 @@ class VolkswagenAppDriver:
     async def _nodes(self) -> list[UiNode]:
         return parse_ui_dump(await self._t.dump_ui())
 
+    async def _wait_for_nodes(
+        self,
+        predicate: Callable[[list[UiNode]], bool],
+        *,
+        reason: str,
+        active_window: bool = False,
+        require_stable: bool = True,
+        timeout_s: float = 4.0,
+    ) -> list[UiNode]:
+        """Poll the fast agent until the destination screen is actually ready."""
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        last_error: CompanionTransportError | None = None
+        last_signature: tuple[object, ...] | None = None
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                xml = await (
+                    self._t.dump_active_ui()
+                    if active_window
+                    else self._t.dump_ui()
+                )
+                nodes = parse_ui_dump(xml)
+                if predicate(nodes):
+                    if not require_stable:
+                        return nodes
+                    signature: tuple[object, ...] = tuple(
+                        (
+                            node.resource_id,
+                            node.text,
+                            node.content_desc,
+                            node.bounds,
+                            node.clickable,
+                            node.checked,
+                        )
+                        for node in nodes
+                    )
+                    if signature == last_signature:
+                        return nodes
+                    last_signature = signature
+                else:
+                    last_signature = None
+            except CompanionTransportError as err:
+                last_error = err
+            await asyncio.sleep(0.15)
+        suffix = f": {last_error}" if last_error else ""
+        raise CompanionTransportError(
+            f"Volkswagen app: timed out waiting for {reason}{suffix}"
+        )
+
     async def _tap(self, node: UiNode | None, *, reason: str) -> None:
         if node is None or node.tap_point is None:
             raise CompanionTransportError(f"Volkswagen app: could not find {reason}")
@@ -58,6 +106,29 @@ class VolkswagenAppDriver:
 
     async def _tap_text(self, nodes: list[UiNode], pattern: str) -> None:
         await self._tap(find_by_text(nodes, pattern), reason=f"text {pattern}")
+
+    @staticmethod
+    def _safe_navigation_node(nodes: list[UiNode]) -> UiNode | None:
+        """Find a VW-owned close/up control without ever using global Back."""
+        for resource_id in (
+            "vwd_navigation_button",
+            "vehicleHealthBack",
+            "climatisationSettingsLeading",
+        ):
+            node = find_by_rid(nodes, resource_id)
+            if node is not None and node.tap_point is not None:
+                return node
+        # We Connect 4.3.2's Zones screen exposes its up button without text,
+        # description OR resource-id. Restrict the fallback to a clickable node
+        # wholly inside the physical top-left navigation slot. Overview has
+        # already been ruled out before this method is called.
+        for node in nodes:
+            if not node.clickable or node.bounds is None:
+                continue
+            left, top, right, bottom = node.bounds
+            if left <= 30 and 100 <= top <= 180 and right <= 180 and bottom <= 310:
+                return node
+        return None
 
     async def ensure_overview(self) -> list[UiNode]:
         """Return through VW-owned controls; never global-BACK out of the app."""
@@ -82,7 +153,7 @@ class VolkswagenAppDriver:
             # VW detail sheets expose their own X/up button. Tapping it is
             # bounded to the app; unlike GLOBAL_ACTION_BACK it can never reveal
             # Android Settings when the Compose navigation stack is shallow.
-            navigation = find_by_rid(nodes, "vwd_navigation_button")
+            navigation = self._safe_navigation_node(nodes)
             if navigation is not None and navigation.tap_point is not None:
                 await self._tap(navigation, reason="Volkswagen navigation button")
                 continue
@@ -95,19 +166,36 @@ class VolkswagenAppDriver:
         await self.ensure_overview()
         await self._t.swipe(540, 1900, 540, 850, 500)
         await self._settle()
-        return await self._nodes()
+        return await self._wait_for_nodes(
+            lambda nodes: find_by_desc(nodes, r"^Settings\. Open details$") is not None,
+            reason="scrolled vehicle overview",
+        )
 
     async def _read_climate(self) -> dict[str, object]:
         try:
             nodes = await self.ensure_overview()
             await self._tap_rid(nodes, "climateTile")
-            detail = await self._nodes()
+            detail = await self._wait_for_nodes(
+                lambda current: find_by_rid(current, "clima_compose_view") is not None,
+                reason="climate detail",
+            )
             out = parse_climate(detail)
             await self._tap_rid(detail, "clima_settings_compose_view")
-            settings = await self._nodes()
+            settings = await self._wait_for_nodes(
+                lambda current: (
+                    find_by_rid(current, "climatisationSettingsLeading") is not None
+                    or find_by_rid(current, "ClimatisationAtUnlockEnabled") is not None
+                ),
+                reason="climate settings",
+            )
             out.update(parse_climate_settings(settings))
-            await self._tap_text(settings, r"^Zones$")
-            out.update(parse_zones(await self._nodes()))
+            if find_by_text(settings, r"^Zones$") is not None:
+                await self._tap_text(settings, r"^Zones$")
+                zones = await self._wait_for_nodes(
+                    lambda current: find_by_text(current, r"^Front left$") is not None,
+                    reason="climate zones",
+                )
+                out.update(parse_zones(zones))
             return out
         finally:
             await self.ensure_overview()
@@ -118,7 +206,11 @@ class VolkswagenAppDriver:
             nodes = await self._overview_scrolled()
             await self._tap_desc(nodes, r"^Settings\. Open details$")
             opened = True
-            return parse_vehicle_settings(await self._nodes())
+            settings = await self._wait_for_nodes(
+                lambda current: find_by_rid(current, "subtitle") is not None,
+                reason="vehicle settings",
+            )
+            return parse_vehicle_settings(settings)
         finally:
             if opened:
                 await self.ensure_overview()
@@ -129,7 +221,11 @@ class VolkswagenAppDriver:
             nodes = await self._overview_scrolled()
             await self._tap_desc(nodes, r"^Vehicle Health Report\. Open details$")
             opened = True
-            return parse_vehicle_health(await self._nodes())
+            health = await self._wait_for_nodes(
+                lambda current: find_by_rid(current, "vehicleHealthBack") is not None,
+                reason="vehicle health report",
+            )
+            return parse_vehicle_health(health)
         finally:
             if opened:
                 await self.ensure_overview()
@@ -137,9 +233,15 @@ class VolkswagenAppDriver:
     async def _read_location(self) -> dict[str, object]:
         nodes = await self.ensure_overview()
         await self._tap_rid(nodes, "cat_nav_map_tab_navigation")
-        map_nodes = await self._nodes()
+        map_nodes = await self._wait_for_nodes(
+            lambda current: find_by_desc(current, r"^Find vehicle$") is not None,
+            reason="vehicle map",
+        )
         await self._tap_desc(map_nodes, r"^Find vehicle$")
-        map_nodes = await self._nodes()
+        map_nodes = await self._wait_for_nodes(
+            lambda current: find_by_desc(current, r"^Google Map$") is not None,
+            reason="centred vehicle map",
+        )
         google_map = find_by_desc(map_nodes, r"^Google Map$")
         if google_map is None or google_map.bounds is None:
             raise CompanionTransportError("Volkswagen app: Google Map is unavailable")
@@ -149,10 +251,18 @@ class VolkswagenAppDriver:
         marker_x = (left + right) // 2
         marker_y = round(top + (bottom - top) * 0.43)
         await self._t.tap(marker_x, marker_y)
-        await self._settle()
-        vehicle_card = await self._nodes()
+        vehicle_card = await self._wait_for_nodes(
+            lambda current: find_by_text(current, r"^Share$") is not None,
+            reason="vehicle map card",
+        )
         await self._tap_text(vehicle_card, r"^Share$")
-        return parse_shared_location(await self._nodes())
+        share_sheet = await self._wait_for_nodes(
+            lambda current: bool(parse_shared_location(current)),
+            reason="shared Google Maps URL",
+            active_window=True,
+            require_stable=False,
+        )
+        return parse_shared_location(share_sheet)
 
     async def read_extended(self) -> dict[str, object]:
         """Read every confirmed multi-screen ID.3 value, failure-soft per route."""
@@ -180,7 +290,10 @@ class VolkswagenAppDriver:
     async def _open_climate(self) -> list[UiNode]:
         nodes = await self.ensure_overview()
         await self._tap_rid(nodes, "climateTile")
-        return await self._nodes()
+        return await self._wait_for_nodes(
+            lambda current: find_by_rid(current, "clima_compose_view") is not None,
+            reason="climate detail",
+        )
 
     async def start_climate(self) -> None:
         nodes = await self._open_climate()
@@ -315,7 +428,13 @@ class VolkswagenAppDriver:
     async def _open_climate_settings(self) -> list[UiNode]:
         detail = await self._open_climate()
         await self._tap_rid(detail, "clima_settings_compose_view")
-        return await self._nodes()
+        return await self._wait_for_nodes(
+            lambda current: (
+                find_by_rid(current, "climatisationSettingsLeading") is not None
+                or find_by_rid(current, "ClimatisationAtUnlockEnabled") is not None
+            ),
+            reason="climate settings",
+        )
 
     async def _set_rid_toggle(self, rid: str, desired: bool) -> None:
         nodes = await self._open_climate_settings()
@@ -356,7 +475,10 @@ class VolkswagenAppDriver:
     async def _open_vehicle_settings(self) -> list[UiNode]:
         overview = await self._overview_scrolled()
         await self._tap_desc(overview, r"^Settings\. Open details$")
-        return await self._nodes()
+        return await self._wait_for_nodes(
+            lambda current: find_by_rid(current, "subtitle") is not None,
+            reason="vehicle settings",
+        )
 
     async def _set_vehicle_toggle(self, label: str, enabled: bool) -> None:
         nodes = await self._open_vehicle_settings()

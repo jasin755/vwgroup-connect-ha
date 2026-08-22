@@ -215,9 +215,15 @@ class AgentRelayTransport(NetworkAdbTransport):
         return result
 
     async def dump_ui(self, timeout_s: float = 15.0) -> str:
+        return await self._dump_action("snapshot", timeout_s)
+
+    async def dump_active_ui(self, timeout_s: float = 15.0) -> str:
+        return await self._dump_action("snapshot_active", timeout_s)
+
+    async def _dump_action(self, action: str, timeout_s: float) -> str:
         result = self._require_ok(
-            "snapshot",
-            await self._broker.command("snapshot", timeout_s=timeout_s),
+            action,
+            await self._broker.command(action, timeout_s=timeout_s),
         )
         encoded = str(result.get("xml_b64") or "")
         try:

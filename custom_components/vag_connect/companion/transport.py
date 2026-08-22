@@ -144,6 +144,15 @@ class NetworkAdbTransport:
             )
         return xml
 
+    async def dump_active_ui(self, timeout_s: float = 15.0) -> str:
+        """Return the active window, including a deliberate system share sheet.
+
+        Raw uiautomator already dumps whichever package is foreground. The
+        Accessibility agent overrides this separately because its normal
+        snapshot is intentionally VW-package-restricted.
+        """
+        return await self.dump_ui(timeout_s)
+
     async def foreground_app(self, package: str, timeout_s: float = 10.0) -> None:
         """Bring the app to the front and let it settle.
 

@@ -70,7 +70,12 @@ class VagClimate(VagConnectEntity, ClimateEntity):
         # so offering the slider there would AttributeError on use. A full
         # network client keeps the feature (it has the method), so existing
         # setups are unchanged.
-        if not coordinator.command_method_available("command_set_climate_temperature"):
+        if coordinator.is_companion():
+            # Companion temperature is staged locally and committed through
+            # command_apply_climate; it must remain available even if the old
+            # immediate command was previously marked unsupported.
+            self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+        elif not coordinator.command_method_available("command_set_climate_temperature"):
             self._attr_supported_features = ClimateEntityFeature(0)
 
     @property
@@ -89,6 +94,8 @@ class VagClimate(VagConnectEntity, ClimateEntity):
         if self._pending_temperature is not None:
             return self._pending_temperature
         t = self._vehicle.get("target_temperature")
+        if t is None and self.coordinator.is_companion():
+            return DEFAULT_TEMP
         return float(t) if t is not None else None
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:

@@ -196,6 +196,9 @@ final class AgentHttpServer implements AutoCloseable {
                 case "/snapshot":
                     writeSnapshot(client.getOutputStream(), service.snapshot(2_000));
                     return;
+                case "/snapshot-active":
+                    writeSnapshot(client.getOutputStream(), service.snapshotActive(2_000));
+                    return;
                 case "/wait":
                     long after = parseLong(query.get("after"), 0);
                     long timeout = Math.min(

@@ -849,6 +849,16 @@ class TestClimateExtended:
         c = VagClimate(coord, vin)
         assert c.target_temperature is None
 
+    def test_companion_target_temperature_has_staging_fallback(self):
+        from custom_components.vag_connect.climate import VagClimate
+        coord = _make_coordinator()
+        coord.is_companion.return_value = True
+        vin = list(coord.data.keys())[0]
+        coord.data[vin]["target_temperature"] = None
+        climate = VagClimate(coord, vin)
+        assert climate.target_temperature == 21.0
+        assert climate.supported_features != 0
+
     def test_setup_creates_one_climate_per_vehicle(self):
         import asyncio
         from custom_components.vag_connect.climate import async_setup_entry

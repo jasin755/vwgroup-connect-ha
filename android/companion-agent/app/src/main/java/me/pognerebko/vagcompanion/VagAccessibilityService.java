@@ -122,14 +122,22 @@ public final class VagAccessibilityService extends AccessibilityService {
     }
 
     Snapshot snapshot(long timeoutMs) {
+        return snapshot(timeoutMs, false);
+    }
+
+    Snapshot snapshotActive(long timeoutMs) {
+        return snapshot(timeoutMs, true);
+    }
+
+    private Snapshot snapshot(long timeoutMs, boolean allowActiveSystemWindow) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            return snapshotOnMainThread();
+            return snapshotOnMainThread(allowActiveSystemWindow);
         }
         AtomicReference<Snapshot> result = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
         mainHandler.post(() -> {
             try {
-                result.set(snapshotOnMainThread());
+                result.set(snapshotOnMainThread(allowActiveSystemWindow));
             } finally {
                 done.countDown();
             }
@@ -292,8 +300,8 @@ public final class VagAccessibilityService extends AccessibilityService {
         startRelayClient();
     }
 
-    private Snapshot snapshotOnMainThread() {
-        AccessibilityNodeInfo root = findVolkswagenRoot();
+    private Snapshot snapshotOnMainThread(boolean allowActiveSystemWindow) {
+        AccessibilityNodeInfo root = findActiveRoot(allowActiveSystemWindow);
         if (root == null) {
             return Snapshot.error("no_volkswagen_window", getRevision());
         }
@@ -306,9 +314,9 @@ public final class VagAccessibilityService extends AccessibilityService {
         }
     }
 
-    private AccessibilityNodeInfo findVolkswagenRoot() {
+    private AccessibilityNodeInfo findActiveRoot(boolean allowActiveSystemWindow) {
         AccessibilityNodeInfo active = getRootInActiveWindow();
-        if (isVolkswagen(active)) {
+        if (active != null && (allowActiveSystemWindow || isVolkswagen(active))) {
             return active;
         }
         if (active != null) {

@@ -40,6 +40,13 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.3.2] - 2026-08-22 — grounded VW navigation controls
+
+### Fixed
+- **Vehicle Health no longer strands the poll.** Live We Connect 4.3.2 inspection grounded the complete close-control map: `vehicleHealthBack`, `vwd_navigation_button`, `climatisationSettingsLeading`, plus the Zones screen's ID-less top-left clickable navigation slot. Return-to-overview now follows those VW-owned controls one screen at a time, allowing the later parking-location route to run.
+- **Companion climate temperature remains visible after a failed extended read.** Companion climate explicitly advertises staged target-temperature support and uses 21 °C as the temporary UI target only when no app reading is available. A successful navigation read replaces it with the actual VW value; network-backed brands are unchanged.
+- **Fast-agent navigation waits for destination IDs instead of fixed sleeps.** Climate, settings, health, map and share routes poll for their grounded screen anchors, eliminating stale reads from the previous screen. Agent 0.3.0 adds an explicit active-window snapshot used only after the driver taps Share, so the Android share sheet's Google Maps URL can supply parking coordinates while ordinary snapshots remain restricted to foreground Volkswagen.
+
 ## [4.3.1] - 2026-08-22 — never Back out of Volkswagen
 
 ### Fixed

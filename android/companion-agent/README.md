@@ -71,6 +71,8 @@ Read endpoints:
 
 - `GET /health`
 - `GET /snapshot` — base64-encoded uiautomator-compatible XML
+- `GET /snapshot-active` — explicit active-window snapshot used only for the
+  Android share sheet after the agent itself selected Share
 - `GET /version?package=...`
 - `GET /foreground?package=...`
 - `GET /wait?after=REVISION&timeout=MILLISECONDS`
