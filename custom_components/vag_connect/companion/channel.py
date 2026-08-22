@@ -272,8 +272,12 @@ class CompanionChannel:
         self._source_data_age_s = find_sync_age(nodes, self._preset)
         fields = read_fields(nodes, self._preset)
         if self._preset.driver == "volkswagen_4_3_2":
-            from .vw_screen import parse_overview_openings  # noqa: PLC0415
+            from .vw_screen import (  # noqa: PLC0415
+                parse_overview_charging,
+                parse_overview_openings,
+            )
 
+            fields.update(parse_overview_charging(nodes))
             fields.update(parse_overview_openings(nodes))
         # v2.26.0 (C9) — values behind a detail screen (charge target/power/time
         # on VW) are read by tapping a tile, reading, and coming BACK. Re-apply
@@ -316,11 +320,30 @@ class CompanionChannel:
                 await self._return_to_overview()
         if self._read_extended and self._preset.driver == "volkswagen_4_3_2":
             from .vw_driver import VolkswagenAppDriver  # noqa: PLC0415
+            from .vw_screen import (  # noqa: PLC0415
+                parse_overview_charging,
+                parse_overview_openings,
+            )
 
-            extended = await VolkswagenAppDriver(self._t).read_extended()
+            driver = VolkswagenAppDriver(self._t)
+            extended = await driver.read_extended()
             for key, val in extended.items():
                 fields[key] = val
                 self._nav_cache[key] = val
+            # The car/app can update while Settings → Health → GPS is in the
+            # foreground. Never publish the overview snapshot captured before
+            # that navigation: finish on a stable overview and overwrite every
+            # visible field in the SAME poll result. This is deterministic and
+            # does not rely on Android emitting one more accessibility event
+            # after the final Compose animation.
+            final_overview = await driver.ensure_overview()
+            fresh_overview = read_fields(final_overview, self._preset)
+            fresh_overview.update(parse_overview_charging(final_overview))
+            fresh_overview.update(parse_overview_openings(final_overview))
+            fields.update(fresh_overview)
+            final_age = find_sync_age(final_overview, self._preset)
+            if final_age is not None:
+                self._source_data_age_s = final_age
 
     async def _open_detail(self, tile: ActionSelector) -> list[UiNode] | None:
         """Tap a tile to open its detail screen and return the parsed detail.

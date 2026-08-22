@@ -3715,7 +3715,6 @@ _TRIP_STATS_BRANDS: frozenset[str] = frozenset({"audi", "volkswagen"})
 
 _COMPANION_REDUNDANT_SENSOR_KEYS: frozenset[str] = frozenset({
     "range_km",                 # keep the explicit electric range
-    "charging_state",           # keep the Currently Charging binary sensor
     "climatisation_state",      # represented by the Climate entity
     "target_temperature",       # represented by the Climate entity
     "target_soc",               # represented by the Charge Target Number

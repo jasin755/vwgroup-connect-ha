@@ -220,6 +220,59 @@ _OPENING_TOKENS: dict[str, str] = {
 }
 
 
+def parse_overview_charging(nodes: list[UiNode]) -> dict[str, object]:
+    """Read SoC and the three grounded charging states from the overview.
+
+    We Connect 4.3.2 exposes active charging in the range tile description,
+    while maintenance charging is present only in the visible SoC line as
+    ``Keep charge level • 61%``. A stable overview with neither marker is the
+    third state: not charging. Requiring both overview anchors prevents a
+    loading/detail tree from being mistaken for that negative state.
+    """
+    if find_by_rid(nodes, "rangeTile") is None or find_by_rid(
+        nodes, "climateTile"
+    ) is None:
+        return {}
+    range_overview = find_by_desc(nodes, r"^Range overview\.")
+    if range_overview is None:
+        return {}
+
+    out: dict[str, object] = {}
+    soc_line = next(
+        (
+            node.text
+            for node in nodes
+            if node.text
+            and re.search(
+                r"(?:Keep charge level\s*[\u2022·]\s*)?\d{1,3}\s*%",
+                node.text,
+                re.I,
+            )
+        ),
+        "",
+    )
+    soc_match = re.search(r"(\d{1,3})\s*%", soc_line)
+    if soc_match:
+        soc = int(soc_match.group(1))
+        if 0 <= soc <= 100:
+            out["battery_soc"] = soc
+
+    description = range_overview.content_desc.casefold()
+    status_text = soc_line.casefold()
+    if "currently charging" in description:
+        state = "CHARGING"
+    elif (
+        "conservation charging" in status_text
+        or "keep charge level" in status_text
+    ):
+        state = "CONSERVATION_CHARGING"
+    else:
+        state = "NOT_CHARGING"
+    out["charging_state"] = state
+    out["is_charging"] = state in {"CHARGING", "CONSERVATION_CHARGING"}
+    return out
+
+
 def parse_overview_openings(nodes: list[UiNode]) -> dict[str, object]:
     """Read per-door/window/boot state from the hidden vehicle-image semantics.
 

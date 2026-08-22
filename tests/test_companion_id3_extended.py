@@ -3,11 +3,14 @@
 """Grounded ID.3 / We Connect 4.3.2 extended companion reads."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from dataclasses import replace
+import re
 import threading
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.vag_connect.companion.channel import CompanionChannel
 from custom_components.vag_connect.companion.presets import PRESETS
 from custom_components.vag_connect.companion.screen import (
     parse_ui_dump,
@@ -18,6 +21,7 @@ from custom_components.vag_connect.companion.vw_screen import (
     parse_climate,
     parse_climate_settings,
     parse_shared_location,
+    parse_overview_charging,
     parse_overview_openings,
     parse_vehicle_health,
     parse_vehicle_settings,
@@ -213,6 +217,87 @@ def test_target_reached_is_enabled_but_not_actively_charging() -> None:
     got = read_selectors(detail, nav.values)
     assert got["charging_state"] == "TARGET_REACHED"
     assert got["is_charging"] is False
+
+
+def test_conservation_charging_wins_over_conflicting_button_narration() -> None:
+    """The live SoC badge is authoritative over the disabled target button."""
+    detail = parse_ui_dump(
+        _dump(
+            _node(
+                rid="rangeArcBatterySoc",
+                text="61% • Conservation charging",
+                desc=(
+                    "Charging status. Battery charge level: 61 per cent. "
+                    "Conservation charging"
+                ),
+            ),
+            _node(
+                desc=(
+                    "Stop charging. Target charge level reached. "
+                    "Currently not charging."
+                )
+            ),
+        )
+    )
+    nav = PRESETS["volkswagen"].nav_reads[0]
+    got = read_selectors(detail, nav.values)
+    assert got["battery_soc"] == 61
+    assert got["charging_state"] == "CONSERVATION_CHARGING"
+    assert got["is_charging"] is True
+
+
+@pytest.mark.parametrize(
+    ("range_description", "soc_text", "expected_state", "expected_active"),
+    (
+        (
+            "Range overview. Currently charging. Battery range: 218 kilometres. Open details",
+            "Keep charge level • 60%",
+            "CHARGING",
+            True,
+        ),
+        (
+            "Range overview. Battery range: 218 kilometres. Open details",
+            "Keep charge level • 61%",
+            "CONSERVATION_CHARGING",
+            True,
+        ),
+        (
+            "Range overview. Battery range: 218 kilometres. Open details",
+            "61%",
+            "NOT_CHARGING",
+            False,
+        ),
+    ),
+)
+def test_overview_charging_has_three_explicit_states(
+    range_description: str,
+    soc_text: str,
+    expected_state: str,
+    expected_active: bool,
+) -> None:
+    nodes = parse_ui_dump(
+        _dump(
+            _node(rid="rangeTile"),
+            _node(rid="climateTile"),
+            _node(desc=range_description),
+            _node(text=soc_text),
+        )
+    )
+    assert parse_overview_charging(nodes) == {
+        "battery_soc": int(re.search(r"\d+", soc_text).group()),  # type: ignore[union-attr]
+        "charging_state": expected_state,
+        "is_charging": expected_active,
+    }
+
+
+def test_companion_exposes_three_state_status_not_redundant_binary() -> None:
+    from custom_components.vag_connect.binary_sensor import (
+        _COMPANION_REDUNDANT_BINARY_KEYS,
+    )
+    from custom_components.vag_connect.sensor import _COMPANION_REDUNDANT_SENSOR_KEYS
+
+    assert "is_charging" in _COMPANION_REDUNDANT_BINARY_KEYS
+    assert "charging_state" not in _COMPANION_REDUNDANT_SENSOR_KEYS
 
 
 def test_active_charging_reads_from_soc_narration() -> None:
@@ -550,6 +635,8 @@ async def test_event_overview_merges_individual_openings_without_poll() -> None:
     xml = _dump(
         _node(rid="rangeTile"),
         _node(rid="climateTile"),
+        _node(desc="Range overview. Battery range: 218 kilometres. Open details"),
+        _node(text="Keep charge level • 61%"),
         _node(desc=(
             "Vehicle is unlocked. Something is still open or switched on:. "
             "Boot. Front left-side door. Rear right-side window. "
@@ -566,4 +653,57 @@ async def test_event_overview_merges_individual_openings_without_poll() -> None:
     assert updated["trunk_open"] is True
     assert updated["lights_individual"]["frontLeft"] is True
     assert updated["lights_count"] == 1
+    assert updated["battery_soc"] == 61
+    assert updated["charging_state"] == "CONSERVATION_CHARGING"
+    assert updated["is_charging"] is True
     coordinator.async_set_updated_data.assert_called_once()
+
+
+async def test_extended_refresh_finishes_with_fresh_overview_in_same_result() -> None:
+    """Changes made while detail pages are open must not wait for another poll."""
+    transport = MagicMock()
+    preset = replace(PRESETS["volkswagen"], nav_reads=())
+    channel = CompanionChannel(
+        transport,
+        preset,
+        time_fn=lambda: 0.0,
+        read_extended=True,
+    )
+    final_overview = parse_ui_dump(
+        _dump(
+            _node(rid="rangeTile"),
+            _node(rid="climateTile"),
+            _node(desc="Battery charge level: 44 per cent"),
+            _node(desc="Battery range: 187 kilometres"),
+            _node(desc="Climate control. On. Open details"),
+            _node(
+                desc=(
+                    "Vehicle is unlocked. Something is still open or switched on:. "
+                    "Bonnet. Front left-side window."
+                )
+            ),
+        )
+    )
+    fields: dict[str, object] = {
+        "battery_soc": 60,
+        "electric_range_km": 240,
+        "climatisation_active": False,
+    }
+
+    with patch(
+        "custom_components.vag_connect.companion.vw_driver.VolkswagenAppDriver"
+    ) as driver_cls:
+        driver = driver_cls.return_value
+        driver.read_extended = AsyncMock(return_value={"target_soc": 80})
+        driver.ensure_overview = AsyncMock(return_value=final_overview)
+
+        await channel._augment_via_nav(fields)
+
+    assert fields["target_soc"] == 80
+    assert fields["battery_soc"] == 44
+    assert fields["electric_range_km"] == 187
+    assert fields["climatisation_active"] is True
+    assert fields["doors_locked"] is False
+    assert fields["hood_open"] is True
+    assert fields["windows_individual"]["frontLeft"] is False  # type: ignore[index]
+    driver.ensure_overview.assert_awaited_once()

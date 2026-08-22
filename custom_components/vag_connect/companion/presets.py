@@ -393,7 +393,8 @@ _VW = BrandPreset(
                     content_desc_re=(
                         r"(?:Charging status\..*?|"
                         r"(?:Start charging|Stop charging)\.\s*)"
-                        r"(Target charge level reached|Currently not charging|"
+                        r"(Conservation charging|Target charge level reached|"
+                        r"Currently not charging|"
                         r"Currently charging|Charging)"
                     ),
                     parse="charging_state",
@@ -403,7 +404,8 @@ _VW = BrandPreset(
                     content_desc_re=(
                         r"(?:Charging status\..*?|"
                         r"(?:Start charging|Stop charging)\.\s*)"
-                        r"(Target charge level reached|Currently not charging|"
+                        r"(Conservation charging|Target charge level reached|"
+                        r"Currently not charging|"
                         r"Currently charging|Charging)"
                     ),
                     parse="bool_charging_status",
@@ -628,16 +630,26 @@ def coerce(parse: str, raw: str | None) -> object | None:
     if parse == "bool_charging":
         return bool(re.search(r"(?:Lädt|Wird geladen|Charging)", raw, re.I))
     if parse == "charging_state":
+        if re.search(r"conservation charging|keep charge level", raw, re.I):
+            return "CONSERVATION_CHARGING"
         if re.search(r"target charge level reached|fully charged", raw, re.I):
             return "TARGET_REACHED"
-        if re.search(r"not charging|not connected|nicht verbunden", raw, re.I):
+        if re.search(
+            r"not charging|not connected|nicht verbunden|connect.*charging cable",
+            raw,
+            re.I,
+        ):
             return "NOT_CHARGING"
         if re.search(r"charging|wird geladen|lädt", raw, re.I):
             return "CHARGING"
         return raw
     if parse == "bool_charging_status":
         state = coerce("charging_state", raw)
-        return state == "CHARGING" if state is not None else None
+        return (
+            state in {"CHARGING", "CONSERVATION_CHARGING"}
+            if state is not None
+            else None
+        )
     if parse == "bool_climate":
         if re.search(r"(?:\boff\b|stopped|inactive|aus)", raw, re.I):
             return False

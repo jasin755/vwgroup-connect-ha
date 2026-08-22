@@ -6158,6 +6158,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         )
         from .companion.vw_screen import (  # noqa: PLC0415
             find_by_rid,
+            parse_overview_charging,
             parse_overview_openings,
         )
         from .const import CONF_VIN  # noqa: PLC0415
@@ -6172,6 +6173,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         ):
             return  # detail/splash animations are not overview state
         fields = read_fields(nodes, preset)
+        fields.update(parse_overview_charging(nodes))
         fields.update(parse_overview_openings(nodes))
         vin = str(self.entry.data.get(CONF_VIN, "")).upper()
         if not vin or not fields:

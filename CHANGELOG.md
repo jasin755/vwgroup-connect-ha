@@ -40,6 +40,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.4.1] - 2026-08-22 — lossless extended refresh and conservation charging
+
+### Fixed
+- **Overview changes are retained during extended navigation.** Every Settings, Vehicle Health and parking-location cycle now ends with a stable overview read whose visible values are merged into the same poll result. A SoC, range, climate, lock, opening or light change that occurs while a detail screen is open can no longer be hidden until a later poll or lost when the final Accessibility event is absent.
+- **Conservation charging is a first-class state.** Live We Connect 4.3.2 semantics (`Keep charge level • 61%` / `Conservation charging`) now map to `CONSERVATION_CHARGING` with `is_charging=true`. Active charging, conservation charging and not charging are derived directly from overview events. Companion vehicles expose the useful three-state Charging state sensor alongside the controllable Charging switch and remove the redundant binary Currently Charging entity.
+
 ## [4.4.0] - 2026-08-22 — event-driven overview and individual openings
 
 ### Added

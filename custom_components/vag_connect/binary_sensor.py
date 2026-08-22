@@ -840,6 +840,7 @@ _NEW_BINARY: tuple[VagBinarySensorDescription, ...] = (
 BINARY_DESCRIPTIONS = BINARY_DESCRIPTIONS + _NEW_BINARY
 
 _COMPANION_REDUNDANT_BINARY_KEYS: frozenset[str] = frozenset({
+    "is_charging",  # charging switch + three-state Charging state sensor
     "climatisation_active",
     "battery_care_enabled",
     "auto_unlock_when_charged",
