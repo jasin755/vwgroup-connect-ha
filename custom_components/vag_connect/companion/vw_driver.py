@@ -60,14 +60,18 @@ class VolkswagenAppDriver:
         await self._tap(find_by_text(nodes, pattern), reason=f"text {pattern}")
 
     async def ensure_overview(self) -> list[UiNode]:
-        """Return to the vehicle overview without assuming the current screen."""
-        if (
-            not self._foregrounded
-            or not await self._t.is_foreground("com.volkswagen.weconnect")
-        ):
-            await self._t.foreground_app("com.volkswagen.weconnect")
-            self._foregrounded = True
-        for _ in range(6):
+        """Return through VW-owned controls; never global-BACK out of the app."""
+        for _ in range(12):
+            if (
+                not self._foregrounded
+                or not await self._t.is_foreground("com.volkswagen.weconnect")
+            ):
+                await self._t.foreground_app("com.volkswagen.weconnect")
+                self._foregrounded = True
+                # Foreground becomes true while the splash/Compose tree may
+                # still be empty. Do not interpret that loading window as a
+                # nested screen and immediately BACK out of the app.
+                await self._settle()
             nodes = await self._nodes()
             if find_by_rid(nodes, "rangeTile") and find_by_rid(nodes, "climateTile"):
                 return nodes
@@ -75,7 +79,15 @@ class VolkswagenAppDriver:
             if vehicle_tab is not None and vehicle_tab.clickable:
                 await self._tap(vehicle_tab, reason="Vehicle tab")
                 continue
-            await self._t.key_back()
+            # VW detail sheets expose their own X/up button. Tapping it is
+            # bounded to the app; unlike GLOBAL_ACTION_BACK it can never reveal
+            # Android Settings when the Compose navigation stack is shallow.
+            navigation = find_by_rid(nodes, "vwd_navigation_button")
+            if navigation is not None and navigation.tap_point is not None:
+                await self._tap(navigation, reason="Volkswagen navigation button")
+                continue
+            # Splash/loading/animation: wait for a known safe control. On an
+            # unknown redesign, fail visibly after the cap instead of guessing.
             await self._settle()
         raise CompanionTransportError("Volkswagen app: could not return to overview")
 
@@ -86,24 +98,19 @@ class VolkswagenAppDriver:
         return await self._nodes()
 
     async def _read_climate(self) -> dict[str, object]:
-        depth = 0
         try:
             nodes = await self.ensure_overview()
             await self._tap_rid(nodes, "climateTile")
-            depth = 1
             detail = await self._nodes()
             out = parse_climate(detail)
             await self._tap_rid(detail, "clima_settings_compose_view")
-            depth = 2
             settings = await self._nodes()
             out.update(parse_climate_settings(settings))
             await self._tap_text(settings, r"^Zones$")
-            depth = 3
             out.update(parse_zones(await self._nodes()))
             return out
         finally:
-            for _ in range(depth):
-                await self._t.key_back()
+            await self.ensure_overview()
 
     async def _read_vehicle_settings(self) -> dict[str, object]:
         opened = False
@@ -114,7 +121,7 @@ class VolkswagenAppDriver:
             return parse_vehicle_settings(await self._nodes())
         finally:
             if opened:
-                await self._t.key_back()
+                await self.ensure_overview()
 
     async def _read_health(self) -> dict[str, object]:
         opened = False
@@ -125,7 +132,7 @@ class VolkswagenAppDriver:
             return parse_vehicle_health(await self._nodes())
         finally:
             if opened:
-                await self._t.key_back()
+                await self.ensure_overview()
 
     async def _read_location(self) -> dict[str, object]:
         nodes = await self.ensure_overview()

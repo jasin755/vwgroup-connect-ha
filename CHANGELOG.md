@@ -40,6 +40,11 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.3.1] - 2026-08-22 — never Back out of Volkswagen
+
+### Fixed
+- **Relaunch loop between Volkswagen and Android Settings.** Foreground becomes true before Volkswagen's Compose content is ready; 4.3.0 mistook that splash/loading tree for a nested screen and sent Back, immediately backgrounding VW before relaunching it again. Return-to-overview now uses only Volkswagen-owned navigation controls (the in-app X/up button or Vehicle tab). Loading waits, and an unknown redesign fails visibly without ever issuing global Back. Blind depth-based `Back × N` cleanup was removed from climate/settings/health reads.
+
 ## [4.3.0] - 2026-08-22 — staged climate commits and foreground safety
 
 ### Added

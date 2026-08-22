@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from custom_components.vag_connect.companion.presets import PRESETS
 from custom_components.vag_connect.companion.screen import (
     parse_ui_dump,
@@ -20,6 +22,7 @@ from custom_components.vag_connect.companion.vw_screen import (
     parse_zones,
 )
 from custom_components.vag_connect.companion.vw_driver import VolkswagenAppDriver
+from custom_components.vag_connect.companion.transport import CompanionTransportError
 
 
 def _dump(*nodes: str) -> str:
@@ -242,6 +245,7 @@ class _DriverTransport:
         self.target_soc = 60
         self.temperature = 22.0
         self.taps: list[tuple[int, int]] = []
+        self.back_calls = 0
 
     async def connect(self) -> None:
         self.connected = True
@@ -267,6 +271,7 @@ class _DriverTransport:
 
     def _climate(self) -> str:
         return _dump(
+            _node(rid="vwd_navigation_button", bounds="[0,0][120,120]"),
             _node(rid="clima_compose_view", bounds="[0,200][1080,600]"),
             _node(
                 text=f"{self.temperature - 0.5:g}",
@@ -289,6 +294,7 @@ class _DriverTransport:
 
     def _settings(self) -> str:
         return _dump(
+            _node(rid="vwd_navigation_button", bounds="[0,0][120,120]"),
             _node(rid="subtitle", text="Charging up to (50-100%)", bounds="[100,300][900,360]"),
             _node(rid="value", text=f"{self.target_soc}%", bounds="[800,420][900,480]"),
             _node(text="Battery Care Mode", bounds="[50,600][700,660]"),
@@ -301,6 +307,8 @@ class _DriverTransport:
         )
 
     async def dump_ui(self) -> str:
+        if self.screen == "loading":
+            return _dump(_node(text="Loading"))
         if self.screen == "climate":
             return self._climate()
         if self.screen == "settings":
@@ -309,7 +317,9 @@ class _DriverTransport:
 
     async def tap(self, x: int, y: int) -> None:
         self.taps.append((x, y))
-        if self.screen == "overview" and x > 500 and y < 700:
+        if self.screen != "overview" and x <= 120 and y <= 120:
+            self.screen = "overview"
+        elif self.screen == "overview" and x > 500 and y < 700:
             self.screen = "climate"
         elif self.screen == "overview" and 950 <= y <= 1200:
             self.screen = "settings"
@@ -321,6 +331,7 @@ class _DriverTransport:
             self.target_soc = round((50 + 50 * ((x - 100) / 800)) / 10) * 10
 
     async def key_back(self) -> None:
+        self.back_calls += 1
         self.screen = "overview"
 
     async def swipe(
@@ -350,7 +361,7 @@ async def test_driver_toggles_battery_care_only_when_needed() -> None:
     assert transport.battery_care is False
     tap_count = len(transport.taps)
     await driver.set_battery_care(False)
-    assert len(transport.taps) == tap_count + 1  # navigation only; no switch tap
+    assert len(transport.taps) == tap_count + 2  # open + safe close; no switch tap
 
 
 async def test_driver_sets_and_verifies_charge_limit() -> None:
@@ -385,6 +396,15 @@ async def test_driver_applies_temperature_and_stop_in_one_detail_visit() -> None
     assert transport.temperature == 20.0
     assert transport.started_climate is False
     assert transport.screen == "overview"
+
+
+async def test_unknown_loading_screen_never_global_backs_out_of_app() -> None:
+    transport = _DriverTransport()
+    transport.screen = "loading"
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    with pytest.raises(CompanionTransportError, match="could not return"):
+        await driver.ensure_overview()
+    assert transport.back_calls == 0
 
 
 async def test_extended_option_rebuilds_companion_client() -> None:
