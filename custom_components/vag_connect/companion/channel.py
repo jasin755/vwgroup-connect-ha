@@ -477,7 +477,9 @@ class CompanionChannel:
         # v2.26.0 (ckomma #21) — enforce a minimum gap between taps so a rapid
         # repeat (a stuck automation, a double press) can never drive the account
         # into a backend rate-limit or lockout.
-        stop_action = action in {"stop_climate", "stop_charging"}
+        stop_action = action in {"stop_climate", "stop_charging"} or (
+            action == "apply_climate" and not bool(kwargs.get("enabled"))
+        )
         if self._last_write_at is not None and not stop_action:
             since = self._now() - self._last_write_at
             if since < _WRITE_MIN_INTERVAL_S:

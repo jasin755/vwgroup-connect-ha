@@ -1067,7 +1067,11 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                     CONF_COMPANION_USE_RELAY: True,
                 }
                 self.hass.config_entries.async_update_entry(
-                    self.entry, data=migrated
+                    self.entry,
+                    data=migrated,
+                    title=self.entry.title.replace(
+                        "(Companion/ADB)", "(Companion Agent)"
+                    ),
                 )
                 _LOGGER.info(
                     "Companion entry migrated from Wireless ADB to the "
@@ -5474,6 +5478,28 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             },
         )
 
+    async def async_apply_companion_climate(
+        self,
+        vin: str,
+        *,
+        temp_c: float | None,
+        enabled: bool,
+    ) -> None:
+        """Commit a staged companion target and HVAC mode in one app visit."""
+        optimistic: dict[str, Any] = {
+            "climatisation_state": "VENTILATION" if enabled else "OFF",
+            "climatisation_active": enabled,
+        }
+        if temp_c is not None:
+            optimistic["target_temperature"] = temp_c
+        await self._cariad_cmd_optimistic(
+            vin,
+            "command_apply_climate",
+            optimistic=optimistic,
+            temp_c=temp_c,
+            enabled=enabled,
+        )
+
     async def async_start_climate_control(
         self,
         vin: str,
@@ -6540,6 +6566,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         "command_start_climate": "climate",
         "command_stop_climate": "climate",
         "command_set_climate_temperature": "climate",
+        "command_apply_climate": "climate",
         # v2.10.0 - rich climate-start (Audi + VW EU). Same class as the
         # basic start so the per-VIN lock serializes start <-> rich-start
         # and prevents the user double-firing both in quick succession.

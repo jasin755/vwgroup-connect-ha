@@ -40,6 +40,15 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.3.0] - 2026-08-22 — staged climate commits and foreground safety
+
+### Added
+- **Climate-card temperature is staged until HVAC commit.** On a companion vehicle, moving the HA climate target no longer opens Volkswagen or sends a backend command. The value remains pending in the climate entity until the user chooses `HEAT_COOL` or `OFF`; the driver then adjusts the wheel and starts/stops climate during one climate-detail visit. Network/API-backed brands keep their existing immediate temperature behaviour.
+
+### Fixed
+- **Companion finishes in Volkswagen, not Android Settings.** Accessibility snapshots now accept only the active Volkswagen window, every return-to-overview checks the foreground package, and consecutive Back actions use Android-safe pacing. A background VW window can no longer make navigation appear complete while Settings or a share sheet remains visible.
+- **Relay entries have an honest title.** The one-time migration renames the old saved `(Companion/ADB)` title to `(Companion Agent)` without touching user-customised titles that do not contain the legacy marker.
+
 ## [4.2.1] - 2026-08-22 — ADB-free outbound companion relay
 
 ### Fixed

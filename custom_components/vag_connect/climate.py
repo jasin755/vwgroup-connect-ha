@@ -63,6 +63,7 @@ class VagClimate(VagConnectEntity, ClimateEntity):
 
     def __init__(self, coordinator: VagConnectCoordinator, vin: str) -> None:
         super().__init__(coordinator, vin, "climate")
+        self._pending_temperature: float | None = None
         # v3.0.0a1 — only advertise settable target temperature when the client
         # can actually set it. The companion (ADB) client does climate on/off
         # (command_start/stop_climate) but has no command_set_climate_temperature,
@@ -85,10 +86,22 @@ class VagClimate(VagConnectEntity, ClimateEntity):
 
     @property
     def target_temperature(self) -> float | None:
+        if self._pending_temperature is not None:
+            return self._pending_temperature
         t = self._vehicle.get("target_temperature")
         return float(t) if t is not None else None
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        if self.coordinator.is_companion():
+            pending = self._pending_temperature
+            await self.coordinator.async_apply_companion_climate(
+                self._vin,
+                temp_c=pending,
+                enabled=hvac_mode == HVACMode.HEAT_COOL,
+            )
+            self._pending_temperature = None
+            self.async_write_ha_state()
+            return
         if hvac_mode == HVACMode.HEAT_COOL:
             await self.coordinator.async_start_climatisation(self._vin)
         else:
@@ -97,6 +110,12 @@ class VagClimate(VagConnectEntity, ClimateEntity):
     async def async_set_temperature(self, **kwargs: object) -> None:
         raw = kwargs.get("temperature", DEFAULT_TEMP)
         temp = float(raw) if isinstance(raw, (int, float)) else DEFAULT_TEMP
+        if self.coordinator.is_companion():
+            # Stage only. The official app is opened once, later, when the user
+            # commits the climate card by choosing HEAT_COOL or OFF.
+            self._pending_temperature = round(temp * 2) / 2
+            self.async_write_ha_state()
+            return
         await self.coordinator.async_set_climatisation_temperature(
             self._vin, temp
         )

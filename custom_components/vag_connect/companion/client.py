@@ -225,6 +225,18 @@ class CompanionClient:
     async def command_stop_climate(self, vin: str, *_a: Any, **_k: Any) -> None:
         await self._dispatch("command_stop_climate")
 
+    async def command_apply_climate(
+        self,
+        vin: str,
+        *,
+        temp_c: float | None,
+        enabled: bool,
+        **_k: Any,
+    ) -> None:
+        await self._channel.do_action(
+            "apply_climate", temp_c=temp_c, enabled=enabled
+        )
+
     async def command_start_charging(self, vin: str, *_a: Any, **_k: Any) -> None:
         await self._dispatch("command_start_charging")
 

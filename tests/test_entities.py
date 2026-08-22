@@ -108,6 +108,7 @@ def _make_coordinator(vehicles=None):
     coord.async_set_departure_timer = AsyncMock()
     coord.async_set_target_soc = AsyncMock()
     coord.async_set_climatisation_temperature = AsyncMock()
+    coord.async_apply_companion_climate = AsyncMock()
     coord.hass = MagicMock()
     coord.hass.async_add_executor_job = AsyncMock()
     return coord
@@ -793,6 +794,43 @@ class TestClimateExtended:
             c.async_set_temperature(temperature=22.5)
         )
         coord.async_set_climatisation_temperature.assert_called_once_with(vin, 22.5)
+
+    def test_companion_temperature_is_staged_until_hvac_commit(self):
+        import asyncio
+        from custom_components.vag_connect.climate import VagClimate
+        from homeassistant.components.climate import HVACMode
+        coord = _make_coordinator()
+        coord.is_companion.return_value = True
+        vin = list(coord.data.keys())[0]
+        climate = VagClimate(coord, vin)
+        climate.async_write_ha_state = MagicMock()
+
+        asyncio.run(climate.async_set_temperature(temperature=23.5))
+        assert climate.target_temperature == 23.5
+        coord.async_set_climatisation_temperature.assert_not_called()
+        coord.async_apply_companion_climate.assert_not_called()
+
+        asyncio.run(climate.async_set_hvac_mode(HVACMode.HEAT_COOL))
+        coord.async_apply_companion_climate.assert_awaited_once_with(
+            vin, temp_c=23.5, enabled=True
+        )
+        assert climate._pending_temperature is None
+
+    def test_companion_staged_temperature_can_commit_with_off(self):
+        import asyncio
+        from custom_components.vag_connect.climate import VagClimate
+        from homeassistant.components.climate import HVACMode
+        coord = _make_coordinator()
+        coord.is_companion.return_value = True
+        vin = list(coord.data.keys())[0]
+        climate = VagClimate(coord, vin)
+        climate.async_write_ha_state = MagicMock()
+
+        asyncio.run(climate.async_set_temperature(temperature=19.0))
+        asyncio.run(climate.async_set_hvac_mode(HVACMode.OFF))
+        coord.async_apply_companion_climate.assert_awaited_once_with(
+            vin, temp_c=19.0, enabled=False
+        )
 
     def test_hvac_modes_list(self):
         from custom_components.vag_connect.climate import VagClimate

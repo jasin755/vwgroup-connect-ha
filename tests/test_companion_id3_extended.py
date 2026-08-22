@@ -249,6 +249,9 @@ class _DriverTransport:
     async def foreground_app(self, package: str) -> None:  # noqa: ARG002
         return None
 
+    async def is_foreground(self, package: str) -> bool:  # noqa: ARG002
+        return True
+
     async def current_app_version(self, package: str) -> str:  # noqa: ARG002
         return "4.3.2"
 
@@ -277,7 +280,11 @@ class _DriverTransport:
                 text=f"{self.temperature + 0.5:g}",
                 bounds="[880,250][1080,500]",
             ),
-            _node(rid="cta_start", text="Start", bounds="[100,1000][900,1120]"),
+            _node(
+                rid="cta_stop" if self.started_climate else "cta_start",
+                text="Stop" if self.started_climate else "Start",
+                bounds="[100,1000][900,1120]",
+            ),
         )
 
     def _settings(self) -> str:
@@ -307,7 +314,7 @@ class _DriverTransport:
         elif self.screen == "overview" and 950 <= y <= 1200:
             self.screen = "settings"
         elif self.screen == "climate" and y >= 900:
-            self.started_climate = True
+            self.started_climate = not self.started_climate
         elif self.screen == "settings" and y >= 550:
             self.battery_care = not self.battery_care
         elif self.screen == "settings" and 350 <= y <= 550:
@@ -358,6 +365,25 @@ async def test_driver_swipes_temperature_until_target() -> None:
     driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
     await driver.set_temperature(23.5)
     assert transport.temperature == 23.5
+    assert transport.screen == "overview"
+
+
+async def test_driver_applies_temperature_and_start_in_one_detail_visit() -> None:
+    transport = _DriverTransport()
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    await driver.apply_climate(23.5, True)
+    assert transport.temperature == 23.5
+    assert transport.started_climate is True
+    assert transport.screen == "overview"
+
+
+async def test_driver_applies_temperature_and_stop_in_one_detail_visit() -> None:
+    transport = _DriverTransport()
+    transport.started_climate = True
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    await driver.apply_climate(20.0, False)
+    assert transport.temperature == 20.0
+    assert transport.started_climate is False
     assert transport.screen == "overview"
 
 

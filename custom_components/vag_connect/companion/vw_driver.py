@@ -61,7 +61,10 @@ class VolkswagenAppDriver:
 
     async def ensure_overview(self) -> list[UiNode]:
         """Return to the vehicle overview without assuming the current screen."""
-        if not self._foregrounded:
+        if (
+            not self._foregrounded
+            or not await self._t.is_foreground("com.volkswagen.weconnect")
+        ):
             await self._t.foreground_app("com.volkswagen.weconnect")
             self._foregrounded = True
         for _ in range(6):
@@ -244,16 +247,17 @@ class VolkswagenAppDriver:
         )
         return current, values
 
-    async def set_temperature(self, target: float) -> None:
+    async def _set_temperature_on_open_climate(
+        self, nodes: list[UiNode], target: float
+    ) -> list[UiNode]:
+        """Adjust the already-open climate wheel and keep the detail open."""
         target = round(float(target) * 2) / 2
         if not 16 <= target <= 30:
             raise CompanionTransportError("Volkswagen app: temperature must be 16-30 °C")
-        nodes = await self._open_climate()
         for _ in range(30):
             current, _ = self._temperature_nodes(nodes)
             if current == target:
-                await self.ensure_overview()
-                return
+                return nodes
             container = find_by_rid(nodes, "clima_compose_view")
             if container is None or container.bounds is None:
                 raise CompanionTransportError(
@@ -279,6 +283,27 @@ class VolkswagenAppDriver:
         raise CompanionTransportError(
             f"Volkswagen app: temperature did not reach {target:g} °C"
         )
+
+    async def set_temperature(self, target: float) -> None:
+        nodes = await self._open_climate()
+        await self._set_temperature_on_open_climate(nodes, target)
+        await self.ensure_overview()
+
+    async def apply_climate(self, target: float | None, enabled: bool) -> None:
+        """Apply a staged target and HVAC mode in one climate-detail visit."""
+        nodes = await self._open_climate()
+        if target is not None:
+            nodes = await self._set_temperature_on_open_climate(nodes, target)
+        start = find_by_rid(nodes, "cta_start") or find_by_text(nodes, r"^Start$")
+        stop = find_by_rid(nodes, "cta_stop") or find_by_text(nodes, r"^Stop$")
+        if enabled:
+            # Moving the wheel may itself start climate. If Stop is now shown,
+            # the requested final state is already satisfied.
+            if stop is None:
+                await self._tap(start, reason="Start climate button")
+        elif start is None:
+            await self._tap(stop, reason="Stop climate button")
+        await self.ensure_overview()
 
     async def _open_climate_settings(self) -> list[UiNode]:
         detail = await self._open_climate()
@@ -376,11 +401,11 @@ class VolkswagenAppDriver:
         await self.ensure_overview()
 
     async def start_climate_control(self, **kwargs: Any) -> None:
-        """Start climate; preferences are deliberately separate commands."""
+        """Apply the optional temperature and start in one detail visit."""
         requested = {
             key: value
             for key, value in kwargs.items()
-            if value is not None and key != "climatisation_mode"
+            if value is not None and key not in {"climatisation_mode", "temp_c"}
         }
         if requested:
             raise CompanionTransportError(
@@ -389,7 +414,8 @@ class VolkswagenAppDriver:
                 "entities first; one rich command may not send several app "
                 "requests inside the 60-second safety interval"
             )
-        await self.start_climate()
+        temp = kwargs.get("temp_c")
+        await self.apply_climate(float(temp) if temp is not None else None, True)
 
     async def execute(self, action: str, **kwargs: Any) -> None:
         """Dispatch a version-gated companion action onto the grounded flow."""
@@ -403,6 +429,12 @@ class VolkswagenAppDriver:
             await self.stop_charging()
         elif action == "start_climate_control":
             await self.start_climate_control(**kwargs)
+        elif action == "apply_climate":
+            temp = kwargs.get("temp_c")
+            await self.apply_climate(
+                float(temp) if temp is not None else None,
+                bool(kwargs["enabled"]),
+            )
         elif action == "set_climate_temperature":
             await self.set_temperature(float(kwargs["temp_c"]))
         elif action == "set_target_soc":
@@ -446,6 +478,7 @@ VW_DRIVER_ACTIONS = frozenset(
         "start_climate",
         "stop_climate",
         "start_climate_control",
+        "apply_climate",
         "start_charging",
         "stop_charging",
         "set_climate_temperature",

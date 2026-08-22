@@ -298,6 +298,7 @@ _VW = BrandPreset(
         ActionSelector(action="start_charging", label_re=r"^Start charging"),
         ActionSelector(action="stop_charging", label_re=r"^Stop charging"),
         ActionSelector(action="start_climate_control", resource_id="cta_start"),
+        ActionSelector(action="apply_climate", resource_id="clima_compose_view"),
         ActionSelector(
             action="set_climate_temperature",
             resource_id="clima_compose_view",
@@ -689,6 +690,7 @@ ACTION_TO_COMMAND: dict[str, str] = {
     "start_climate": "command_start_climate",
     "stop_climate": "command_stop_climate",
     "start_climate_control": "command_start_climate_control",
+    "apply_climate": "command_apply_climate",
     "set_climate_temperature": "command_set_climate_temperature",
     "set_target_soc": "command_set_target_soc",
     "set_battery_care": "command_set_battery_care",

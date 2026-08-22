@@ -288,7 +288,10 @@ class AgentRelayTransport(NetworkAdbTransport):
         self._require_ok(
             "back", await self._broker.command("back", timeout_s=timeout_s)
         )
-        await asyncio.sleep(0.05)
+        # Multi-level climate reads issue up to three BACK actions. Give Android
+        # time to commit each Activity/Compose transition so they cannot bunch
+        # together and overshoot from Volkswagen into the previous system app.
+        await asyncio.sleep(0.25)
 
     async def is_foreground(self, package: str, timeout_s: float = 10.0) -> bool:
         result = self._require_ok(

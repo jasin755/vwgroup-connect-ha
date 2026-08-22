@@ -12,9 +12,7 @@ import android.os.PowerManager;
 import android.os.SystemClock;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.view.accessibility.AccessibilityWindowInfo;
 
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -316,16 +314,10 @@ public final class VagAccessibilityService extends AccessibilityService {
         if (active != null) {
             active.recycle();
         }
-        List<AccessibilityWindowInfo> windows = getWindows();
-        for (int i = windows.size() - 1; i >= 0; i--) {
-            AccessibilityNodeInfo candidate = windows.get(i).getRoot();
-            if (isVolkswagen(candidate)) {
-                return candidate;
-            }
-            if (candidate != null) {
-                candidate.recycle();
-            }
-        }
+        // Never return a background Volkswagen window while Android Settings,
+        // the share sheet or another app is actually foreground. Doing so made
+        // the driver believe it had returned to the overview and leave the
+        // other app visible at the end of a poll.
         return null;
     }
 

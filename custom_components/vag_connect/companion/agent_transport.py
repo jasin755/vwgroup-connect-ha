@@ -207,7 +207,7 @@ class AgentHttpTransport(NetworkAdbTransport):
         await self._request(
             "POST", "/back", timeout_s=timeout_s, accepted=(200, 202)
         )
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.25)
 
     async def is_foreground(self, package: str, timeout_s: float = 10.0) -> bool:
         body = await self._request(
