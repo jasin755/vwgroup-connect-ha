@@ -40,6 +40,11 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.5.2] - 2026-08-23 — transient overview return is failure-soft
+
+### Fixed
+- **A one-off final overview race no longer creates a persistent Error Reporter repair.** The deterministic reread after Settings, Vehicle Health and GPS remains best-effort: if Volkswagen's Compose back stack briefly cannot return to overview, the poll now keeps the valid overview captured at its start plus all successfully read extended fields. The next scheduled poll retries normally instead of discarding the whole snapshot with `Volkswagen app: could not return to overview`.
+
 ## [4.5.1] - 2026-08-22 — keep companion display awake off charger
 
 ### Fixed

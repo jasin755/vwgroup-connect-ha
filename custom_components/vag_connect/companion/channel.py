@@ -345,7 +345,20 @@ class CompanionChannel:
             # visible field in the SAME poll result. This is deterministic and
             # does not rely on Android emitting one more accessibility event
             # after the final Compose animation.
-            final_overview = await driver.ensure_overview()
+            try:
+                final_overview = await driver.ensure_overview()
+            except CompanionTransportError:
+                # Extended navigation is explicitly best-effort. The overview
+                # captured at the start of this poll is still valid, so a
+                # transient Compose/back-stack race here must not discard the
+                # entire vehicle snapshot or create a persistent Error Reporter
+                # repair. The next poll retries navigation from the foreground.
+                _LOGGER.debug(
+                    "companion %s: final overview reconciliation failed; "
+                    "keeping the initial overview",
+                    self._preset.brand,
+                )
+                return
             fresh_overview = read_fields(final_overview, self._preset)
             fresh_overview.update(parse_overview_charging(final_overview))
             fresh_overview.update(parse_overview_openings(final_overview))

@@ -782,3 +782,38 @@ async def test_extended_refresh_finishes_with_fresh_overview_in_same_result() ->
     assert fields["hood_open"] is True
     assert fields["windows_individual"]["frontLeft"] is False  # type: ignore[index]
     driver.ensure_overview.assert_awaited_once()
+
+
+async def test_final_overview_race_keeps_initial_poll_instead_of_raising() -> None:
+    """A transient final navigation failure is not a whole-poll failure."""
+    transport = MagicMock()
+    preset = replace(PRESETS["volkswagen"], nav_reads=())
+    channel = CompanionChannel(
+        transport,
+        preset,
+        time_fn=lambda: 0.0,
+        read_extended=True,
+    )
+    fields: dict[str, object] = {
+        "battery_soc": 58,
+        "doors_locked": True,
+    }
+
+    with patch(
+        "custom_components.vag_connect.companion.vw_driver.VolkswagenAppDriver"
+    ) as driver_cls:
+        driver = driver_cls.return_value
+        driver.read_extended = AsyncMock(return_value={"target_soc": 60})
+        driver.ensure_overview = AsyncMock(
+            side_effect=CompanionTransportError(
+                "Volkswagen app: could not return to overview"
+            )
+        )
+
+        await channel._augment_via_nav(fields)
+
+    assert fields == {
+        "battery_soc": 58,
+        "doors_locked": True,
+        "target_soc": 60,
+    }
