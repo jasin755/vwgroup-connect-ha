@@ -40,6 +40,16 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.6.0] - 2026-08-23 — self-service ID.3 companion onboarding
+
+### Added
+- **Installable Agent APK and phone-side setup.** Agent 0.6.0 can be downloaded directly from this repository, side-loaded without ADB, and configured on the phone with the Home Assistant URL plus a generated shared token. Its screen shows configuration and AccessibilityService status.
+- **Automatic relay discovery by token.** A new token-protected discovery route binds exactly one Agent to exactly one companion config entry without exposing or copying Home Assistant's internal config-entry id. The one-time LAN probe automatically migrates to the outbound HTTPS relay; normal operation needs neither a fixed phone IP nor Wireless Debugging.
+- **ID.3-first documentation.** The main README is now a standalone, tested setup guide for Volkswagen ID.3, including supported data and controls, APK verification, limitations, troubleshooting, updates, security and a structured runbook for AI assistants.
+
+### Changed
+- **Support scope is explicit.** This fork is verified on ID.3 with Volkswagen app 4.3.2 in English and Pixel 4a / Android 13. Other Volkswagen models may work when they share the same UI, but are not guaranteed; other brands remain outside this fork's support scope.
+
 ## [4.5.2] - 2026-08-23 — transient overview return is failure-soft
 
 ### Fixed

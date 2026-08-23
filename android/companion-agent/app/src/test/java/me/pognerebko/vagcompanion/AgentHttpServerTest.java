@@ -30,4 +30,14 @@ public final class AgentHttpServerTest {
         assertEquals(-1, VagAccessibilityService.normalizeBatteryLevel(-1));
         assertEquals(-1, VagAccessibilityService.normalizeBatteryLevel(101));
     }
+
+    @Test
+    public void relayEndpointFallsBackToTokenDiscovery() throws Exception {
+        assertEquals(
+                "/api/vag_connect/companion_agent/by-token",
+                AgentRelayClient.endpointPath(""));
+        assertEquals(
+                "/api/vag_connect/companion_agent/entry-id",
+                AgentRelayClient.endpointPath("entry-id"));
+    }
 }

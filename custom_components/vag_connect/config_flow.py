@@ -443,8 +443,8 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 # the Android AccessibilityService agent; last-resort two-way
                 # path where the manufacturer network API is read-only.
                 "companion_adb": (
-                    "Companion-Handy (Android Agent) — EXPERIMENTELL, alle "
-                    "Marken (zweites Handy mit eingeloggter App nötig)"
+                    "ID.3 Companion (Android Agent) — EXPERIMENTAL, "
+                    "spare phone with Volkswagen app 4.3.2"
                 ),
             },
         )
@@ -454,9 +454,11 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
     ) -> config_entries.ConfigFlowResult:
         """Set up the Android companion-agent channel.
 
-        Collects the agent's LAN address and token, brand, VIN and optional
-        S-PIN, then asks the agent for the installed Volkswagen app version.
-        Volkswagen credentials remain exclusively inside the official app.
+        Collects the agent's one-time LAN address and token, brand, VIN and
+        optional S-PIN, then asks the agent for the installed Volkswagen app
+        version. Setup automatically migrates to the outbound HTTPS relay, so
+        the phone address is not used after onboarding. Volkswagen credentials
+        remain exclusively inside the official app.
         """
         from .const import (  # noqa: PLC0415
             CONF_ADB_HOST,

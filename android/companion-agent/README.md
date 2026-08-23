@@ -47,21 +47,30 @@ The APK is written to:
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Install and provision
+## Install and configure
 
-ADB is needed for this one-time operation and for future APK updates:
+Download [`releases/vag-companion-agent.apk`](releases/vag-companion-agent.apk),
+open it on the Android phone and allow installation from that source. ADB is
+not required for the prebuilt APK.
+
+Open **VAG Companion Agent** on the phone:
+
+1. Enter the Home Assistant base URL, preferably HTTPS.
+2. Tap **Generate secure token**, then **Copy token for Home Assistant**.
+3. Tap **Save Home Assistant configuration**.
+4. Tap **Open Accessibility settings** and enable **VAG Companion Agent**.
+5. Open the official Volkswagen app and leave it on the vehicle overview.
+
+Before the HA config entry exists, the Agent retries the token-discovery relay
+route. The HA integration's one-time LAN probe then creates the matching broker
+and automatically switches normal operation to the outbound relay. Users never
+need to know the internal HA config-entry id.
+
+ADB remains available to developers and preserves existing configuration when
+the APK has the same signature:
 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell settings put secure enabled_accessibility_services \
-  me.pognerebko.vagcompanion/.VagAccessibilityService
-adb shell settings put secure accessibility_enabled 1
-adb shell content call \
-  --uri content://me.pognerebko.vagcompanion.agent \
-  --method provision \
-  --extra token:s:YOUR_RANDOM_TOKEN \
-  --extra relay_url_b64:s:BASE64_OF_HTTPS_HA_URL \
-  --extra channel_id:s:HA_CONFIG_ENTRY_ID
 ```
 
 Verify from another machine on the same LAN:
@@ -70,8 +79,9 @@ Verify from another machine on the same LAN:
 curl -H 'X-Token: YOUR_RANDOM_TOKEN' http://PHONE_IP:8765/health
 ```
 
-An update installed with `adb install -r` preserves both the token and the
-enabled AccessibilityService, provided it is signed with the same key.
+Installing a newer APK from this repository over the existing copy preserves
+the token and AccessibilityService, provided Android accepts the matching
+signature.
 
 ## API
 

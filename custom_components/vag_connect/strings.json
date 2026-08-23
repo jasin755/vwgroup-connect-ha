@@ -135,8 +135,8 @@
         }
       },
       "companion_adb": {
-        "title": "Companion phone (ADB) — experimental",
-        "description": "Read and control your car by driving the official app on a spare Android phone over ADB. This is EXPERIMENTAL and opt-in. You need a second phone that stays signed into the brand app, with ADB over Wi-Fi enabled. An older phone (Android 10 or earlier) connects here directly; a modern phone (Android 11+, wireless debugging) needs the 'VW Group App ADB Bridge' add-on, which you then point this at. Volkswagen is verified; the other brands are read-only for now until a screen map from a real device is confirmed. Nothing is rooted and no app tokens are read — the integration only reads the screen and taps buttons.",
+        "title": "ID.3 companion phone (Android Agent) — experimental",
+        "description": "Read and control a Volkswagen ID.3 through the visible official Volkswagen app on a spare Android phone. Install and configure the Agent APK first, enable its AccessibilityService and leave the Volkswagen app signed in. Setup contacts the Agent once over your LAN, then automatically switches to its outbound HTTPS relay; Wireless Debugging, ADB and a fixed phone address are not used in normal operation. Verified on ID.3, Volkswagen app 4.3.2 (English), Pixel 4a / Android 13. Other Volkswagen models may work if they use the same UI, but are not guaranteed. Other brands are not supported by this fork.",
         "data": {
           "brand": "Vehicle brand",
           "adb_host": "Companion Agent IP address",
@@ -147,11 +147,11 @@
           "companion_addon_token": "Agent token"
         },
         "data_description": {
-          "adb_host": "The phone's address on your network, e.g. 192.168.1.42. Reserve it in DHCP.",
+          "adb_host": "The phone's current LAN address, e.g. 192.168.1.42. It is needed only for the initial Agent check; the outbound relay does not require a fixed address.",
           "adb_port": "The Companion Agent API port, normally 8765.",
           "vin": "The 17-character VIN of the car shown in the app.",
           "companion_use_addon": "Tick this for an Android 11 or newer phone, which only offers wireless debugging. Then enter the ADD-ON's address above instead of the phone's.",
-          "companion_addon_token": "The token provisioned into the Companion Agent during installation."
+          "companion_addon_token": "The same random token you generated and saved in the Companion Agent app."
         }
       }
     },
@@ -170,7 +170,7 @@
       "skoda_qr_retired": "Škoda's passwordless (QR) login was switched off by Volkswagen and no longer works. Go back and choose “Email + Password (legacy)”, then pick Škoda there and sign in with your MyŠkoda email and password.",
       "portal_interaction_required": "The EU Data Act portal needs a one-time action in your browser or brand app (e.g. accept terms, confirm consent, finish onboarding/region selection) before headless access works. This is NOT a wrong-password problem — open the portal once in a browser, complete the prompt, then try again.",
       "still_waiting_browser": "Still waiting for browser approval. Open the URL above, sign in, confirm the code, then click Submit again.",
-      "companion_cannot_connect": "Could not reach the phone over ADB. Check it is on the network, that ADB over Wi-Fi is on, and that you accepted the debugging prompt.",
+      "companion_cannot_connect": "Could not reach the Companion Agent. Check that the phone is on the same LAN, its AccessibilityService is enabled, port 8765 is reachable and the token matches.",
       "companion_needs_addon": "This looks like an Android 11+ phone using wireless debugging, which the direct connection here cannot use (it is TLS + pairing). Install the 'VW Group App ADB Bridge' add-on (github.com/its-me-prash/vwgroup-app-adb-bridge) and point the companion at it. Older phones (Android 10 or earlier) connect here directly.",
       "companion_app_not_found": "Connected to the phone, but the brand app is not installed on it.",
       "companion_unknown_brand": "That brand has no companion preset yet."

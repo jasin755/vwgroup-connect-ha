@@ -1050,6 +1050,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             if companion_token and (
                 use_relay
                 or companion_data.get(CONF_COMPANION_USE_ADDON, False)
+                or use_agent
             ):
                 from .companion.relay import (  # noqa: PLC0415
                     register_relay,

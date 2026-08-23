@@ -50,11 +50,21 @@ final class AgentRelayClient implements AutoCloseable {
                 .apply();
     }
 
+    static String loadRelayUrl(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_URL, "");
+    }
+
+    static String loadChannelId(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_CHANNEL, "");
+    }
+
     void start() {
         String url = relayUrl();
         String channel = channelId();
         String token = AgentHttpServer.loadToken(service);
-        if (url.isEmpty() || channel.isEmpty() || token.isEmpty() || running) {
+        if (url.isEmpty() || token.isEmpty() || running) {
             return;
         }
         running = true;
@@ -153,9 +163,7 @@ final class AgentRelayClient implements AutoCloseable {
     }
 
     private JSONObject post(JSONObject payload) throws Exception {
-        String encodedChannel = URLEncoder.encode(channelId(), "UTF-8");
-        URL endpoint = new URL(
-                relayUrl() + "/api/vag_connect/companion_agent/" + encodedChannel);
+        URL endpoint = new URL(relayUrl() + endpointPath(channelId()));
         HttpURLConnection connection = (HttpURLConnection) endpoint.openConnection();
         try {
             connection.setRequestMethod("POST");
@@ -291,13 +299,19 @@ final class AgentRelayClient implements AutoCloseable {
     }
 
     private String relayUrl() {
-        return service.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(KEY_URL, "");
+        return loadRelayUrl(service);
     }
 
     private String channelId() {
-        return service.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(KEY_CHANNEL, "");
+        return loadChannelId(service);
+    }
+
+    static String endpointPath(String channelId) throws Exception {
+        if (channelId == null || channelId.isEmpty()) {
+            return "/api/vag_connect/companion_agent/by-token";
+        }
+        return "/api/vag_connect/companion_agent/"
+                + URLEncoder.encode(channelId, "UTF-8");
     }
 
     private String packageVersion() {

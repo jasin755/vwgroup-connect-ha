@@ -2,10 +2,19 @@
 <resources>
     <string name="app_name">VAG Companion Agent</string>
     <string name="service_name">VAG Companion Agent</string>
-    <string name="service_description">Reads the visible Volkswagen app accessibility tree for your Home Assistant instance and performs only commands sent over your authorised ADB connection.</string>
+    <string name="service_description">Reads the visible Volkswagen app accessibility tree for your Home Assistant instance and performs only commands received through its token-protected relay.</string>
     <string name="status_enabled">Accessibility service is enabled and connected.</string>
     <string name="status_disabled">Accessibility service is not enabled.</string>
+    <string name="configuration_saved">Home Assistant relay configuration is saved.</string>
+    <string name="configuration_missing">Enter the Home Assistant URL and a token, then save.</string>
+    <string name="configuration_invalid">Use an http(s) URL and a token with at least 32 URL-safe characters.</string>
+    <string name="relay_url_hint">Home Assistant URL (https://home.example.com)</string>
+    <string name="token_hint">Shared random token (32+ characters)</string>
+    <string name="generate_token">Generate secure token</string>
+    <string name="copy_token">Copy token for Home Assistant</string>
+    <string name="token_copied">Token copied</string>
+    <string name="save_configuration">Save Home Assistant configuration</string>
     <string name="open_settings">Open Accessibility settings</string>
     <string name="open_vw">Open Volkswagen app</string>
-    <string name="privacy_note">The agent does not read Volkswagen credentials or network traffic. It only observes the visible accessibility tree of the Volkswagen app. Its command provider is restricted to the Android shell UID used by ADB.</string>
+    <string name="privacy_note">The agent does not read Volkswagen credentials, app storage or network traffic. It only observes the visible Volkswagen accessibility tree. Its local API and Home Assistant relay require your random token; ADB is not required for normal setup or operation.</string>
 </resources>

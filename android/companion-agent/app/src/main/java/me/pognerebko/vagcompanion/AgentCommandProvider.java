@@ -59,7 +59,8 @@ public final class AgentCommandProvider extends ContentProvider {
                 if (!AgentHttpServer.isValidToken(token)) {
                     result.putString("status", "invalid_token");
                 } else if (!relayUrl.isEmpty()
-                        && (!relayUrl.startsWith("https://") || channelId.isEmpty())) {
+                        && !relayUrl.startsWith("https://")
+                        && !relayUrl.startsWith("http://")) {
                     result.putString("status", "invalid_relay");
                 } else if (getContext() == null) {
                     result.putString("status", "no_context");

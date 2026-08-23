@@ -6,18 +6,74 @@ from __future__ import annotations
 import asyncio
 import base64
 from contextlib import suppress
+import json
+from types import SimpleNamespace
 
 import pytest
 
 from custom_components.vag_connect.companion.relay import (
     AgentRelayTransport,
+    CompanionAgentTokenRelayView,
     CompanionRelayBroker,
+    _REGISTRY_KEY,
+    _broker_by_token,
 )
 from custom_components.vag_connect.companion.transport import CompanionTransportError
 
 
 _TOKEN = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 _XML = '<?xml version="1.0"?><hierarchy><node text="60%"/></hierarchy>'
+
+
+def test_token_discovery_requires_one_unique_matching_broker() -> None:
+    first = CompanionRelayBroker("first", _TOKEN)
+    assert _broker_by_token({"first": first}, _TOKEN) is first
+    assert _broker_by_token({"first": first}, "wrong") is None
+    assert _broker_by_token({}, _TOKEN) is None
+
+    duplicate = CompanionRelayBroker("duplicate", _TOKEN)
+    assert _broker_by_token(
+        {"first": first, "duplicate": duplicate}, _TOKEN
+    ) is None
+
+
+class _RelayRequest:
+    def __init__(self, hass: object, token: str, payload: object) -> None:
+        self.app = {"hass": hass}
+        self.headers = {"X-Token": token}
+        self._payload = payload
+
+    async def json(self) -> object:
+        return self._payload
+
+
+@pytest.mark.asyncio
+async def test_token_discovery_view_routes_valid_agent_poll() -> None:
+    broker = CompanionRelayBroker("entry", _TOKEN)
+    hass = SimpleNamespace(data={_REGISTRY_KEY: {"entry": broker}})
+    request = _RelayRequest(
+        hass,
+        _TOKEN,
+        {"agent_version": "0.6.0", "event_only": True},
+    )
+
+    response = await CompanionAgentTokenRelayView().post(request)
+
+    assert response.status == 200
+    assert json.loads(response.text) == {"command": None}
+    assert broker.agent_version == "0.6.0"
+
+
+@pytest.mark.asyncio
+async def test_token_discovery_view_rejects_unknown_token() -> None:
+    broker = CompanionRelayBroker("entry", _TOKEN)
+    hass = SimpleNamespace(data={_REGISTRY_KEY: {"entry": broker}})
+
+    response = await CompanionAgentTokenRelayView().post(
+        _RelayRequest(hass, "wrong", {})
+    )
+
+    assert response.status == 404
 
 
 async def _cancel(task: asyncio.Task) -> None:

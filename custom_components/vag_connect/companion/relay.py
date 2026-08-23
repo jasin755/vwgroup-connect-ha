@@ -177,6 +177,57 @@ def unregister_relay(hass: HomeAssistant, entry_id: str) -> None:
         broker.close()
 
 
+def _broker_by_token(
+    registry: dict[str, CompanionRelayBroker], supplied: str
+) -> CompanionRelayBroker | None:
+    """Resolve exactly one broker by its random shared secret.
+
+    This removes the config-entry-id copy/paste step from Android onboarding.
+    A duplicated token deliberately resolves to nothing rather than selecting
+    an arbitrary vehicle.
+    """
+    if not supplied:
+        return None
+    matches = [
+        broker
+        for broker in registry.values()
+        if hmac.compare_digest(supplied, broker.token)
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+_INVALID_PAYLOAD = object()
+
+
+async def _handle_relay_payload(request: Any, broker: CompanionRelayBroker) -> Any:
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001 - malformed/untrusted phone request
+        return _INVALID_PAYLOAD
+    if not isinstance(payload, dict):
+        return _INVALID_PAYLOAD
+    return await broker.handle_poll(payload)
+
+
+class CompanionAgentTokenRelayView(HomeAssistantView):
+    """Token-discovery route used before the Agent knows its config entry id."""
+
+    url = "/api/vag_connect/companion_agent/by-token"
+    name = "api:vag_connect:companion_agent_by_token"
+    requires_auth = False
+
+    async def post(self, request: Any) -> Any:
+        hass: HomeAssistant = request.app["hass"]
+        supplied = request.headers.get("X-Token", "")
+        broker = _broker_by_token(_registry(hass), supplied)
+        if broker is None:
+            return self.json({"error": "unknown or duplicate token"}, status_code=404)
+        command = await _handle_relay_payload(request, broker)
+        if command is _INVALID_PAYLOAD:
+            return self.json({"error": "invalid json"}, status_code=400)
+        return self.json({"command": command})
+
+
 class CompanionAgentRelayView(HomeAssistantView):
     """Unauthenticated HA route protected by the per-entry agent token."""
 
@@ -192,19 +243,18 @@ class CompanionAgentRelayView(HomeAssistantView):
         supplied = request.headers.get("X-Token", "")
         if not supplied or not hmac.compare_digest(supplied, broker.token):
             return self.json({"error": "forbidden"}, status_code=403)
-        try:
-            payload = await request.json()
-        except Exception:  # noqa: BLE001 - malformed/untrusted phone request
-            return self.json({"error": "invalid json"}, status_code=400)
-        if not isinstance(payload, dict):
+        command = await _handle_relay_payload(request, broker)
+        if command is _INVALID_PAYLOAD:
             return self.json({"error": "invalid payload"}, status_code=400)
-        command = await broker.handle_poll(payload)
         return self.json({"command": command})
 
 
 def ensure_relay_view(hass: HomeAssistant) -> None:
     if hass.data.get(_VIEW_REGISTERED_KEY):
         return
+    # Register the static discovery route before the dynamic ``{entry_id}``
+    # route so ``by-token`` can never be interpreted as an entry id.
+    hass.http.register_view(CompanionAgentTokenRelayView)
     hass.http.register_view(CompanionAgentRelayView)
     hass.data[_VIEW_REGISTERED_KEY] = True
 
