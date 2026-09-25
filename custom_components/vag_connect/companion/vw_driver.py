@@ -11,6 +11,7 @@ from typing import Any
 from .screen import UiNode, parse_ui_dump
 from .transport import CompanionTransportError, NetworkAdbTransport
 from .vw_screen import (
+    charge_limit_gesture,
     find_by_desc,
     find_by_rid,
     find_by_text,
@@ -108,6 +109,25 @@ class VolkswagenAppDriver:
         await self._tap(find_by_text(nodes, pattern), reason=f"text {pattern}")
 
     @staticmethod
+    def _has_charge_limit_notice(nodes: list[UiNode]) -> bool:
+        return any(
+            re.search(r"You have increased the target charge level", node.text or node.content_desc)
+            for node in nodes
+        )
+
+    async def _dismiss_charge_limit_notice(self, nodes: list[UiNode]) -> list[UiNode]:
+        if self._has_charge_limit_notice(nodes):
+            # Only acknowledge the identified Battery Care information sheet.
+            # Never click a generic confirmation on an unknown dialog.
+            await self._tap_text(nodes, r"^Got it$")
+            return await self._wait_for_nodes(
+                lambda current: not self._has_charge_limit_notice(current)
+                and parse_vehicle_settings(current).get("target_soc") is not None,
+                reason="charge-limit settings after Battery Care notice",
+            )
+        return nodes
+
+    @staticmethod
     def _safe_navigation_node(nodes: list[UiNode]) -> UiNode | None:
         """Find a VW-owned close/up control without ever using global Back."""
         for resource_id in (
@@ -144,6 +164,9 @@ class VolkswagenAppDriver:
                 # nested screen and immediately BACK out of the app.
                 await self._settle()
             nodes = await self._nodes()
+            if self._has_charge_limit_notice(nodes):
+                await self._dismiss_charge_limit_notice(nodes)
+                continue
             if find_by_rid(nodes, "rangeTile") and find_by_rid(nodes, "climateTile"):
                 return nodes
             vehicle_tab = find_by_rid(nodes, "vehicle_tab_navigation")
@@ -516,22 +539,40 @@ class VolkswagenAppDriver:
             )
         nodes = await self._open_vehicle_settings()
         current = parse_vehicle_settings(nodes).get("target_soc")
-        if current == target:
+        if current == target and find_by_rid(nodes, "vwd_save_button") is None:
             await self.ensure_overview()
             return
-        subtitle = find_by_rid(nodes, "subtitle")
-        value = find_by_rid(nodes, "value")
-        if subtitle is None or subtitle.bounds is None or value is None or value.bounds is None:
-            raise CompanionTransportError("Volkswagen app: charge-limit slider missing")
-        left, _, right, _ = subtitle.bounds
-        y = (value.bounds[1] + value.bounds[3]) // 2
-        x = round(left + (right - left) * ((target - 50) / 50))
-        await self._t.tap(x, y)
-        await self._settle()
-        actual = parse_vehicle_settings(await self._nodes()).get("target_soc")
+        if current != target:
+            gesture = charge_limit_gesture(nodes, target)
+            if gesture is None:
+                raise CompanionTransportError("Volkswagen app: charge-limit slider geometry unavailable")
+            await self._t.swipe(*gesture, 350)
+            nodes = await self._wait_for_nodes(
+                lambda current_nodes: self._has_charge_limit_notice(current_nodes)
+                or (parse_vehicle_settings(current_nodes).get("target_soc") is not None
+                    and find_by_rid(current_nodes, "vwd_save_button") is not None),
+                reason="charge-limit draft or Battery Care notice",
+            )
+        nodes = await self._dismiss_charge_limit_notice(nodes)
+        actual = parse_vehicle_settings(nodes).get("target_soc")
         if actual != target:
             raise CompanionTransportError(
-                f"Volkswagen app: charge-limit slider produced {actual!r}, expected {target}"
+                f"Volkswagen app: charge-limit draft is {actual!r}, expected {target}; not saved"
+            )
+        await self._tap_rid(nodes, "vwd_save_button")
+        # Save navigates away. Wait for that transition before reopening: a
+        # draft value alone is not proof the setting persisted.
+        await self._wait_for_nodes(
+            lambda current_nodes: find_by_rid(current_nodes, "rangeTile") is not None
+            and find_by_rid(current_nodes, "climateTile") is not None,
+            reason="overview after saving charge limit",
+            timeout_s=15.0,
+        )
+        saved = await self._open_vehicle_settings()
+        actual = parse_vehicle_settings(saved).get("target_soc")
+        if actual != target:
+            raise CompanionTransportError(
+                f"Volkswagen app: saved charge limit is {actual!r}, expected {target}"
             )
         await self.ensure_overview()
 

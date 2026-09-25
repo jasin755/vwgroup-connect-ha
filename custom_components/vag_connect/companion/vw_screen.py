@@ -166,6 +166,54 @@ def parse_vehicle_settings(nodes: list[UiNode]) -> dict[str, object]:
     return out
 
 
+def charge_limit_gesture(
+    nodes: list[UiNode], target: int
+) -> tuple[int, int, int, int] | None:
+    """Locate the actual SeekBar and its current thumb, never the wider title.
+
+    The VW slider's child is an accessibility touch target around the thumb
+    (``Value, 60``), not the entire track. Inset the slider bounds by half that
+    target width, then drag from the current thumb centre to the desired tick.
+    Both geometry and the current percentage must agree before any gesture.
+    """
+    if not 50 <= target <= 100 or target % 10:
+        return None
+    slider = find_by_rid(nodes, "slider")
+    current = parse_vehicle_settings(nodes).get("target_soc")
+    if (
+        slider is None or slider.bounds is None
+        or slider.clazz != "android.widget.SeekBar"
+        or not isinstance(current, int) or not 50 <= current <= 100
+    ):
+        return None
+    left, top, right, bottom = slider.bounds
+    thumbs = []
+    for node in nodes:
+        if not node.enabled or node.bounds is None or node.clazz != slider.clazz:
+            continue
+        match = re.fullmatch(r"Value,\s*(\d+)", node.content_desc)
+        if match is None or int(match.group(1)) != current:
+            continue
+        x1, y1, x2, y2 = node.bounds
+        # At 50/100% the thumb's accessibility touch target may overhang
+        # the track. Its centre must still belong to this slider.
+        if x1 < x2 and left <= (x1 + x2) / 2 <= right and top <= y1 < y2 <= bottom:
+            thumbs.append(node)
+    if len(thumbs) != 1:
+        return None
+    thumb = thumbs[0]
+    assert thumb.bounds is not None and thumb.tap_point is not None
+    inset = (thumb.bounds[2] - thumb.bounds[0]) / 2
+    start, end = left + inset, right - inset
+    if end <= start:
+        return None
+    thumb_x, thumb_y = thumb.tap_point
+    expected_current = start + (end - start) * ((current - 50) / 50)
+    if abs(thumb_x - expected_current) > (end - start) / 10:
+        return None
+    return thumb_x, thumb_y, round(start + (end - start) * ((target - 50) / 50)), thumb_y
+
+
 def _next_text(nodes: list[UiNode], label_pattern: str) -> str | None:
     rx = re.compile(label_pattern, re.I)
     for index, node in enumerate(nodes):

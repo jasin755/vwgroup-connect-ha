@@ -18,6 +18,7 @@ from custom_components.vag_connect.companion.screen import (
     read_selectors,
 )
 from custom_components.vag_connect.companion.vw_screen import (
+    charge_limit_gesture,
     parse_climate,
     parse_climate_settings,
     parse_shared_location,
@@ -44,10 +45,11 @@ def _node(
     clickable: bool = False,
     checkable: bool = False,
     checked: bool = False,
+    clazz: str = "android.view.View",
 ) -> str:
     return (
         f'<node resource-id="{rid}" text="{text}" content-desc="{desc}" '
-        f'class="android.view.View" bounds="{bounds}" '
+        f'class="{clazz}" bounds="{bounds}" '
         f'clickable="{str(clickable).lower()}" '
         f'checkable="{str(checkable).lower()}" '
         f'checked="{str(checked).lower()}" enabled="true" />'
@@ -571,11 +573,121 @@ async def test_driver_toggles_battery_care_only_when_needed() -> None:
     assert len(transport.taps) == tap_count + 2  # open + safe close; no switch tap
 
 
-async def test_driver_sets_and_verifies_charge_limit() -> None:
-    transport = _DriverTransport()
+class _ChargeSettingsTransport(_DriverTransport):
+    """Captured slider geometry, separate draft/save state and modal notice."""
+
+    def __init__(self, *, wrong_tick: bool = False, save_fails: bool = False) -> None:
+        super().__init__()
+        self.saved_target = 60
+        self.dirty = False
+        self.notice = False
+        self.acknowledgements = 0
+        self.save_calls = 0
+        self.wrong_tick = wrong_tick
+        self.save_fails = save_fails
+
+    def _settings(self) -> str:
+        if self.notice:
+            return _dump(
+                _node(text="You have increased the target charge level"),
+                _node(text="Got it", clickable=True, bounds="[100,2000][980,2150]"),
+            )
+        thumb_x = round(107 + 739 * (self.target_soc - 50) / 50)
+        return _dump(
+            _node(rid="vwd_navigation_button", bounds="[19,136][131,248]"),
+            _node(rid="subtitle", text="Charging up to (50-100%)", bounds="[94,730][986,770]"),
+            _node(rid="slider", clazz="android.widget.SeekBar", bounds="[66,807][887,919]"),
+            _node(clazz="android.widget.SeekBar", desc=f"Value, {self.target_soc}",
+                  bounds=f"[{thumb_x - 56},807][{thumb_x + 56},919]"),
+            _node(rid="value", text=f"{self.target_soc}%", bounds="[906,843][986,883]"),
+            _node(rid="vwd_save_button", text="Save", clickable=True,
+                  bounds="[940,136][1052,248]") if self.dirty else "",
+        )
+
+    async def tap(self, x: int, y: int) -> None:
+        if self.notice:
+            assert y > 2000
+            self.notice = False
+            self.acknowledgements += 1
+        elif self.screen == "settings" and x > 900 and y < 250:
+            self.save_calls += 1
+            if not self.save_fails:
+                self.saved_target = self.target_soc
+            self.dirty = False
+            self.screen = "overview"
+        else:
+            await super().tap(x, y)
+            if self.screen == "settings":
+                self.target_soc = self.saved_target
+
+    async def swipe(self, x1: int, y1: int, x2: int, y2: int, dur_ms: int = 300) -> None:
+        assert self.screen == "settings" and y1 == y2 == 863
+        assert abs(x1 - (107 + 739 * (self.target_soc - 50) / 50)) < 2
+        self.target_soc = 90 if self.wrong_tick else round((50 + 50 * (x2 - 107) / 739) / 10) * 10
+        self.dirty = True
+        self.notice = self.target_soc > 80
+
+
+@pytest.mark.parametrize("target", [50, 60, 70, 80, 90, 100])
+async def test_driver_sets_and_verifies_charge_limit(target: int) -> None:
+    transport = _ChargeSettingsTransport()
     driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
-    await driver.set_target_soc(80)
-    assert transport.target_soc == 80
+    await driver.set_target_soc(target)
+    assert transport.saved_target == target
+    assert transport.screen == "overview"
+    assert transport.save_calls == (0 if target == 60 else 1)
+    assert transport.acknowledgements == (1 if target > 80 else 0)
+
+
+async def test_charge_limit_does_not_save_90_when_80_requested() -> None:
+    transport = _ChargeSettingsTransport(wrong_tick=True)
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    with pytest.raises(CompanionTransportError, match="90.*expected 80; not saved"):
+        await driver.set_target_soc(80)
+    assert transport.saved_target == 60
+    assert transport.save_calls == 0
+    assert transport.acknowledgements == 1
+
+
+@pytest.mark.parametrize("initial", [50, 100])
+async def test_charge_limit_can_move_from_endpoint(initial: int) -> None:
+    transport = _ChargeSettingsTransport()
+    transport.saved_target = transport.target_soc = initial
+    await VolkswagenAppDriver(transport, settle_s=0).set_target_soc(80)  # type: ignore[arg-type]
+    assert transport.saved_target == 80
+
+
+async def test_charge_limit_reopens_settings_to_verify_save() -> None:
+    transport = _ChargeSettingsTransport(save_fails=True)
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    with pytest.raises(CompanionTransportError, match="saved charge limit is 60, expected 80"):
+        await driver.set_target_soc(80)
+    assert transport.save_calls == 1
+
+
+def test_charge_limit_requires_real_slider_not_heading_width() -> None:
+    assert charge_limit_gesture(parse_ui_dump(_DriverTransport()._settings()), 80) is None
+    assert charge_limit_gesture(parse_ui_dump(_ChargeSettingsTransport()._settings()), 80) == (255, 863, 547, 863)
+
+
+async def test_saved_charge_target_replaces_stale_navigation_cache() -> None:
+    transport = _ChargeSettingsTransport()
+    channel = CompanionChannel(transport, PRESETS["volkswagen"], time_fn=lambda: 100.0)  # type: ignore[arg-type]
+    channel._nav_cache["target_soc"] = 60
+    await channel.do_action("set_target_soc", target=80)
+    fields = await channel.read()
+    assert fields is not None and fields["target_soc"] == 80
+
+
+async def test_failed_charge_target_keeps_last_verified_cache() -> None:
+    from custom_components.vag_connect.companion.channel import CompanionWriteBlocked
+
+    transport = _ChargeSettingsTransport(save_fails=True)
+    channel = CompanionChannel(transport, PRESETS["volkswagen"], time_fn=lambda: 100.0)  # type: ignore[arg-type]
+    channel._nav_cache["target_soc"] = 60
+    with pytest.raises(CompanionWriteBlocked, match="saved charge limit is 60"):
+        await channel.do_action("set_target_soc", target=80)
+    assert channel._nav_cache["target_soc"] == 60
 
 
 async def test_driver_swipes_temperature_until_target() -> None:

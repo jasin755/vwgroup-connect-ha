@@ -551,6 +551,13 @@ class CompanionChannel:
                 except CompanionTransportError as err:
                     raise CompanionWriteBlocked(str(err)) from err
                 self._last_write_at = self._now()
+                # A verified saved target must replace the 15-minute detail
+                # cache, otherwise the next overview poll republishes the old
+                # target immediately after a successful command.
+                if action == "set_target_soc":
+                    self._nav_cache["target_soc"] = kwargs["target"]
+                elif action == "update_charging_settings" and kwargs.get("target_soc") is not None:
+                    self._nav_cache["target_soc"] = kwargs["target_soc"]
                 return
         try:
             if not self._t.connected:

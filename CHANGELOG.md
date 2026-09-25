@@ -40,6 +40,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.6.1] - 2026-09-25 — correct charge-target slider and save flow
+
+### Fixed
+- **Selecting 80% no longer picks 90%.** The driver uses the actual charge SeekBar and its current thumb bounds, instead of the wider heading. It verifies the draft target before saving, acknowledges the specific Battery Care informational sheet when present, presses Save, and reopens Settings to verify persistence. An unexpected value is never saved as a successful command.
+- **Verified targets replace the navigation cache.** The next overview poll no longer restores an old cached charge target after a successful write. The Android Agent does not need an update for this fix.
+
 ## [4.6.0] - 2026-08-23 — self-service ID.3 companion onboarding
 
 ### Added
