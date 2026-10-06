@@ -101,8 +101,29 @@ therefore remains unavailable on this companion channel.
 - maximum/reduced AC charging current;
 - automatic release of the AC connector.
 
-The driver verifies known Volkswagen resource IDs and app version before it
-taps. Unknown layouts fail visibly instead of guessing coordinates.
+The driver checks the Volkswagen app version and locates controls by resource
+ID, text and their current screen bounds. It rejects ambiguous, clipped or
+changed targets before tapping. These checks reduce risk; they are not proof
+that every phone or app layout is supported.
+
+### Other phones and display sizes
+
+Only the Pixel 4a / Android 13 combination above has been tested on a real
+device. There is **no automatic first-run screen calibration**. Font size,
+display scaling, rotation and app updates can affect compatibility.
+
+From integration 4.6.2, scrolling is calculated inside the actual visible list,
+and the ID-less Zones back button is located through its toolbar structure.
+Slider gestures use the controls' current dimensions. Tests cover scaled layouts
+and rejected off-screen/ambiguous targets; they do not replace real-device tests.
+
+GPS sharing still has a limitation: the Volkswagen map marker has no accessible
+identifier. The driver uses Share directly when the vehicle card is open. An
+unlabelled-marker tap is allowed only for the measured Pixel layout; on other
+layouts, open the vehicle's map card manually or leave GPS unavailable. The
+integration logs which optional screen could not be read.
+
+Test the reads and each intended control on a new phone before automating them.
 
 ### Companion phone diagnostics
 

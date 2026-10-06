@@ -45,17 +45,36 @@ class UiNode:
     checkable: bool = False
     checked: bool = False
     enabled: bool = True
+    visible: bool = True
+    scrollable: bool = False
+    parent_index: int | None = None
+    clip_bounds: tuple[int, int, int, int] | None = None
+    window_bounds: tuple[int, int, int, int] | None = None
+    package: str = ""
+
+    @property
+    def visible_bounds(self) -> tuple[int, int, int, int] | None:
+        if not self.visible or self.bounds is None:
+            return None
+        left, top, right, bottom = self.bounds
+        # Negative/off-screen rectangles are valid XML, not valid tap targets.
+        left, top = max(0, left), max(0, top)
+        if self.clip_bounds is not None:
+            cl, ct, cr, cb = self.clip_bounds
+            left, top, right, bottom = max(left, cl), max(top, ct), min(right, cr), min(bottom, cb)
+        return (left, top, right, bottom) if left < right and top < bottom else None
 
     @property
     def tap_point(self) -> tuple[int, int] | None:
         """Centre of the node, the point ``input tap`` would target."""
-        if self.bounds is None:
+        bounds = self.visible_bounds
+        if bounds is None or not self.enabled:
             return None
-        left, top, right, bottom = self.bounds
+        left, top, right, bottom = bounds
         return ((left + right) // 2, (top + bottom) // 2)
 
 
-_BOUNDS_RE = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+_BOUNDS_RE = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
 
 
 def _parse_bounds(raw: str | None) -> tuple[int, int, int, int] | None:
@@ -81,8 +100,21 @@ def parse_ui_dump(xml: str) -> list[UiNode]:
     except ET.ParseError:
         return []
     out: list[UiNode] = []
-    for el in root.iter("node"):
+    def visit(
+        el: ET.Element,
+        parent: int | None = None,
+        clip: tuple[int, int, int, int] | None = None,
+        window: tuple[int, int, int, int] | None = None,
+        enabled: bool = True,
+        visible: bool = True,
+    ) -> None:
         a = el.attrib
+        bounds = _parse_bounds(a.get("bounds"))
+        if parent is None and len(el) and bounds is not None:
+            clip = window = bounds
+        index = len(out)
+        enabled = enabled and a.get("enabled", "true") == "true"
+        visible = visible and a.get("visible-to-user", "true") == "true"
         out.append(
             UiNode(
                 resource_id=a.get("resource-id", ""),
@@ -90,12 +122,25 @@ def parse_ui_dump(xml: str) -> list[UiNode]:
                 text=a.get("text", ""),
                 clazz=a.get("class", ""),
                 clickable=a.get("clickable", "false") == "true",
-                bounds=_parse_bounds(a.get("bounds")),
+                bounds=bounds,
                 checkable=a.get("checkable", "false") == "true",
                 checked=a.get("checked", "false") == "true",
-                enabled=a.get("enabled", "true") == "true",
+                enabled=enabled,
+                visible=visible,
+                scrollable=a.get("scrollable", "false") == "true",
+                parent_index=parent,
+                clip_bounds=clip,
+                window_bounds=window,
+                package=a.get("package", ""),
             )
         )
+        if out[index].scrollable or out[index].clazz.endswith(("ScrollView", "RecyclerView")):
+            clip = out[index].visible_bounds or (0, 0, 0, 0)
+        for child in el.findall("node"):
+            visit(child, index, clip, window, enabled, visible)
+
+    for el in ([root] if root.tag == "node" else root.findall("node")):
+        visit(el)
     return out
 
 
@@ -282,6 +327,8 @@ def find_node_for(nodes: list[UiNode], spec: "ActionSelector") -> UiNode | None:
     """
     candidates: list[UiNode] = []
     for n in nodes:
+        if n.tap_point is None or n.visible_bounds != n.bounds:
+            continue
         hit = False
         if spec.resource_id and _rid_matches(n.resource_id, spec.resource_id):
             hit = True
@@ -295,7 +342,7 @@ def find_node_for(nodes: list[UiNode], spec: "ActionSelector") -> UiNode | None:
             hit = True
         if hit:
             candidates.append(n)
-    if not candidates:
+    if not candidates or len({n.tap_point for n in candidates}) != 1:
         return None
     clickable = [n for n in candidates if n.clickable and n.tap_point]
     return clickable[0] if clickable else candidates[0]

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -15,6 +16,7 @@ from .vw_screen import (
     find_by_desc,
     find_by_rid,
     find_by_text,
+    legacy_vehicle_marker_point,
     parse_climate,
     parse_climate_settings,
     parse_shared_location,
@@ -22,7 +24,11 @@ from .vw_screen import (
     parse_vehicle_settings,
     parse_zones,
     row_toggle,
+    vertical_scroll_gesture,
+    zones_navigation_node,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class VolkswagenAppDriver:
@@ -94,8 +100,20 @@ class VolkswagenAppDriver:
         )
 
     async def _tap(self, node: UiNode | None, *, reason: str) -> None:
-        if node is None or node.tap_point is None:
+        if (node is None or node.tap_point is None
+                or node.visible_bounds != node.bounds):
             raise CompanionTransportError(f"Volkswagen app: could not find {reason}")
+        # A layout transition between locating and tapping must not send a tap
+        # to whatever happens to occupy the old coordinates.
+        current = await self._nodes()
+        if not any(
+            n.enabled and n.visible_bounds == n.bounds == node.bounds
+            and (n.resource_id, n.text, n.content_desc, n.clazz, n.checkable, n.checked)
+            == (node.resource_id, node.text, node.content_desc, node.clazz, node.checkable, node.checked)
+            and n.package in {"", "com.volkswagen.weconnect"}
+            for n in current
+        ):
+            raise CompanionTransportError(f"Volkswagen app: layout changed before {reason}; no tap sent")
         await self._t.tap(*node.tap_point)
         await self._settle()
 
@@ -138,17 +156,7 @@ class VolkswagenAppDriver:
             node = find_by_rid(nodes, resource_id)
             if node is not None and node.tap_point is not None:
                 return node
-        # We Connect 4.3.2's Zones screen exposes its up button without text,
-        # description OR resource-id. Restrict the fallback to a clickable node
-        # wholly inside the physical top-left navigation slot. Overview has
-        # already been ruled out before this method is called.
-        for node in nodes:
-            if not node.clickable or node.bounds is None:
-                continue
-            left, top, right, bottom = node.bounds
-            if left <= 30 and 100 <= top <= 180 and right <= 180 and bottom <= 310:
-                return node
-        return None
+        return zones_navigation_node(nodes)
 
     async def ensure_overview(self) -> list[UiNode]:
         """Return through VW-owned controls; never global-BACK out of the app."""
@@ -185,19 +193,38 @@ class VolkswagenAppDriver:
             await self._settle()
         raise CompanionTransportError("Volkswagen app: could not return to overview")
 
-    async def _overview_scrolled(self) -> list[UiNode]:
-        overview = await self.ensure_overview()
-        health_visible = find_by_desc(
-            overview, r"^Vehicle Health Report\. Open details$"
-        )
-        settings_visible = find_by_desc(overview, r"^Settings\. Open details$")
-        if health_visible is not None and settings_visible is not None:
-            return overview
-        await self._t.swipe(540, 1900, 540, 850, 500)
-        await self._settle()
-        return await self._wait_for_nodes(
-            lambda nodes: find_by_desc(nodes, r"^Settings\. Open details$") is not None,
-            reason="scrolled vehicle overview",
+    @staticmethod
+    def _fully_visible(node: UiNode | None) -> bool:
+        return node is not None and node.visible_bounds is not None and node.visible_bounds == node.bounds
+
+    async def _scroll_to(
+        self, nodes: list[UiNode], selector: Callable[[list[UiNode]], UiNode | None],
+        *, reason: str,
+    ) -> list[UiNode]:
+        for attempt in range(7):
+            if self._fully_visible(selector(nodes)):
+                return nodes
+            gesture = vertical_scroll_gesture(nodes)
+            if attempt == 6 or gesture is None:
+                break
+            # Re-evaluate the container before moving; its viewport may resize
+            # when system bars, text scaling or a sheet changes.
+            latest = await self._nodes()
+            if vertical_scroll_gesture(latest) != gesture:
+                raise CompanionTransportError(f"Volkswagen app: layout changed before scrolling to {reason}")
+            await self._t.swipe(*gesture, 500)
+            after = await self._wait_for_nodes(bool, reason=f"scroll to {reason}")
+            if after == nodes:
+                break  # end of list: no repeated swipes into unrelated controls
+            nodes = after
+        raise CompanionTransportError(f"Volkswagen app: {reason} is not fully visible; unsupported layout")
+
+    async def _overview_scrolled(
+        self, target: str = r"^Settings\. Open details$"
+    ) -> list[UiNode]:
+        return await self._scroll_to(
+            await self.ensure_overview(), lambda nodes: find_by_desc(nodes, target),
+            reason=target,
         )
 
     async def _read_climate(self) -> dict[str, object]:
@@ -247,7 +274,7 @@ class VolkswagenAppDriver:
     async def _read_health(self) -> dict[str, object]:
         opened = False
         try:
-            nodes = await self._overview_scrolled()
+            nodes = await self._overview_scrolled(r"^Vehicle Health Report\. Open details$")
             await self._tap_desc(nodes, r"^Vehicle Health Report\. Open details$")
             opened = True
             health = await self._wait_for_nodes(
@@ -271,19 +298,21 @@ class VolkswagenAppDriver:
             lambda current: find_by_desc(current, r"^Google Map$") is not None,
             reason="centred vehicle map",
         )
-        google_map = find_by_desc(map_nodes, r"^Google Map$")
-        if google_map is None or google_map.bounds is None:
-            raise CompanionTransportError("Volkswagen app: Google Map is unavailable")
-        left, top, right, bottom = google_map.bounds
-        # Find vehicle centres the marker in the upper map viewport. The marker
-        # itself is intentionally absent from the accessibility tree.
-        marker_x = (left + right) // 2
-        marker_y = round(top + (bottom - top) * 0.43)
-        await self._t.tap(marker_x, marker_y)
-        vehicle_card = await self._wait_for_nodes(
-            lambda current: find_by_text(current, r"^Share$") is not None,
-            reason="vehicle map card",
-        )
+        vehicle_card = map_nodes
+        if not self._fully_visible(find_by_text(vehicle_card, r"^Share$")):
+            marker = legacy_vehicle_marker_point(map_nodes)
+            if marker is None:
+                raise CompanionTransportError(
+                    "Volkswagen app: map marker has no accessibility target on this layout; "
+                    "open the vehicle card manually to expose Share"
+                )
+            if legacy_vehicle_marker_point(await self._nodes()) != marker:
+                raise CompanionTransportError("Volkswagen app: map layout changed; no marker tap sent")
+            await self._t.tap(*marker)
+            vehicle_card = await self._wait_for_nodes(
+                lambda current: find_by_text(current, r"^Share$") is not None,
+                reason="vehicle map card",
+            )
         await self._tap_text(vehicle_card, r"^Share$")
         share_sheet = await self._wait_for_nodes(
             lambda current: bool(parse_shared_location(current)),
@@ -305,10 +334,10 @@ class VolkswagenAppDriver:
         for route in routes:
             try:
                 out.update(await route())
-            except CompanionTransportError:
+            except CompanionTransportError as error:
                 # One redesigned screen must not discard values from the other
                 # three; the channel's overview read remains authoritative.
-                pass
+                _LOGGER.warning("Companion optional route %s skipped: %s", route.__name__, error)
             finally:
                 try:
                     await self.ensure_overview()
@@ -412,6 +441,8 @@ class VolkswagenAppDriver:
                 raise CompanionTransportError(
                     "Volkswagen app: temperature picker missing"
                 )
+            if container.visible_bounds != container.bounds:
+                raise CompanionTransportError("Volkswagen app: temperature picker is clipped; no swipe sent")
             left, top, right, bottom = container.bounds
             y = (top + bottom) // 2
             width = right - left
@@ -419,6 +450,12 @@ class VolkswagenAppDriver:
                 x1, x2 = round(left + width * 0.72), round(left + width * 0.28)
             else:
                 x1, x2 = round(left + width * 0.28), round(left + width * 0.72)
+            latest = await self._nodes()
+            latest_container = find_by_rid(latest, "clima_compose_view")
+            latest_temperature, _ = self._temperature_nodes(latest)
+            if (latest_container is None or latest_container.visible_bounds != container.bounds
+                    or latest_temperature != current):
+                raise CompanionTransportError("Volkswagen app: temperature layout changed; no swipe sent")
             await self._t.swipe(x1, y, x2, y, 350)
             await self._settle()
             nodes = await self._nodes()
@@ -467,6 +504,9 @@ class VolkswagenAppDriver:
 
     async def _set_rid_toggle(self, rid: str, desired: bool) -> None:
         nodes = await self._open_climate_settings()
+        nodes = await self._scroll_to(
+            nodes, lambda current: find_by_rid(current, rid), reason=rid,
+        )
         toggle = find_by_rid(nodes, rid)
         if toggle is None or not toggle.checkable:
             raise CompanionTransportError(f"Volkswagen app: toggle {rid} missing")
@@ -487,8 +527,17 @@ class VolkswagenAppDriver:
 
     async def set_zone(self, label: str, enabled: bool) -> None:
         settings = await self._open_climate_settings()
+        settings = await self._scroll_to(
+            settings, lambda current: find_by_text(current, r"^Zones$"), reason="Zones",
+        )
         await self._tap_text(settings, r"^Zones$")
-        nodes = await self._nodes()
+        nodes = await self._wait_for_nodes(
+            lambda current: find_by_desc(current, r"^Zones$") is not None,
+            reason="Zones screen",
+        )
+        nodes = await self._scroll_to(
+            nodes, lambda current: row_toggle(current, rf"^{re.escape(label)}$"), reason=label,
+        )
         toggle = row_toggle(nodes, rf"^{re.escape(label)}$")
         if toggle is None:
             raise CompanionTransportError(f"Volkswagen app: zone {label} missing")
@@ -511,6 +560,9 @@ class VolkswagenAppDriver:
 
     async def _set_vehicle_toggle(self, label: str, enabled: bool) -> None:
         nodes = await self._open_vehicle_settings()
+        nodes = await self._scroll_to(
+            nodes, lambda current: row_toggle(current, rf"^{re.escape(label)}$"), reason=label,
+        )
         toggle = row_toggle(nodes, rf"^{re.escape(label)}$")
         if toggle is None:
             raise CompanionTransportError(f"Volkswagen app: setting {label} missing")
@@ -546,6 +598,8 @@ class VolkswagenAppDriver:
             gesture = charge_limit_gesture(nodes, target)
             if gesture is None:
                 raise CompanionTransportError("Volkswagen app: charge-limit slider geometry unavailable")
+            if charge_limit_gesture(await self._nodes(), target) != gesture:
+                raise CompanionTransportError("Volkswagen app: charge-limit layout changed; no swipe sent")
             await self._t.swipe(*gesture, 350)
             nodes = await self._wait_for_nodes(
                 lambda current_nodes: self._has_charge_limit_notice(current_nodes)

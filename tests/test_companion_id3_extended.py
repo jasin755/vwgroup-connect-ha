@@ -513,7 +513,13 @@ class _DriverTransport:
         if self.screen == "loading":
             return _dump(_node(text="Loading"))
         if self.screen == "zones":
-            return _dump(_node(clickable=True, bounds="[22,136][154,268]"))
+            return _dump(
+                '<node bounds="[0,136][1080,248]">'
+                + _node(clazz="android.widget.Button", clickable=True, bounds="[19,136][131,248]")
+                + _node(desc="Zones", bounds="[122,170][958,214]")
+                + '</node>'
+                + _node(text="Front left", bounds="[47,613][178,652]")
+            )
         if self.screen == "climate":
             return self._climate()
         if self.screen == "settings":

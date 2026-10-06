@@ -40,6 +40,13 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.6.2] - 2026-10-06 — guarded navigation on different displays
+
+### Fixed
+- **Use real viewports and structure for navigation.** The parser retains the window and scrolling viewport, rejects zero-size/hidden/disabled targets, and supports signed off-screen bounds. Ambiguous targets are rejected. Overview scrolling follows the actual list dimensions, finds each requested item separately, and stops at the end of the list or after six gestures. The Zones back button is identified as a sibling of its toolbar title, replacing the fixed top-left pixel box.
+- **Recheck before input.** Button taps and climate/charge-slider gestures refuse stale or clipped geometry. Nested toggle wrappers must agree on state and row. Optional read failures log the affected route instead of disappearing silently.
+- **Constrain unlabelled map markers.** Use the visible Share button when the vehicle card is already open. The old marker-position heuristic is retained only for the measured Pixel window/map/control layout; other layouts report the limitation without a guessed marker tap. No automatic screen calibration or universal phone compatibility is claimed. Existing Android agents remain compatible.
+
 ## [4.6.1] - 2026-09-25 — correct charge-target slider and save flow
 
 ### Fixed

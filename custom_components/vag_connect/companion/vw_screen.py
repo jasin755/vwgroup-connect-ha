@@ -13,45 +13,92 @@ from .presets import coerce
 from .screen import UiNode
 
 
+def _unique_visible(candidates: list[UiNode]) -> UiNode | None:
+    """Duplicate semantic wrappers at the same location are fine; two targets aren't."""
+    matches = [n for n in candidates if n.enabled and n.visible_bounds is not None]
+    if not matches or len({n.visible_bounds for n in matches}) != 1:
+        return None
+    return matches[0]
+
+
 def find_by_rid(nodes: list[UiNode], resource_id: str) -> UiNode | None:
     """Return the first visible node whose resource-id basename matches."""
-    for node in nodes:
-        rid = node.resource_id.rsplit("/", 1)[-1]
-        if rid == resource_id and node.bounds is not None and node.enabled:
-            return node
-    return None
+    return _unique_visible([
+        node for node in nodes if node.resource_id.rsplit("/", 1)[-1] == resource_id
+    ])
 
 
 def find_by_desc(nodes: list[UiNode], pattern: str) -> UiNode | None:
     """Return the first visible content-description regex match."""
     rx = re.compile(pattern, re.I)
-    return next(
-        (
-            node
-            for node in nodes
-            if node.bounds is not None
-            and node.enabled
-            and node.content_desc
-            and rx.search(node.content_desc)
-        ),
-        None,
-    )
+    return _unique_visible([n for n in nodes if n.content_desc and rx.search(n.content_desc)])
 
 
 def find_by_text(nodes: list[UiNode], pattern: str) -> UiNode | None:
     """Return the first visible text regex match."""
     rx = re.compile(pattern, re.I)
-    return next(
-        (
-            node
-            for node in nodes
-            if node.bounds is not None
-            and node.enabled
-            and node.text
-            and rx.search(node.text)
-        ),
-        None,
-    )
+    return _unique_visible([n for n in nodes if n.text and rx.search(n.text)])
+
+
+def zones_navigation_node(nodes: list[UiNode]) -> UiNode | None:
+    """An ID-less Zones back button is a sibling of the Zones toolbar title.
+
+    No absolute navigation slot: identify the page by its title and zone labels,
+    then require exactly one unlabelled non-toggle Button beside that title.
+    """
+    title = find_by_desc(nodes, r"^Zones$")
+    if (title is None or title.parent_index is None or title.bounds is None
+            or not any(n.text in {"Front left", "Front right"} for n in nodes)):
+        return None
+    left, top, right, bottom = title.bounds
+    return _unique_visible([
+        n for n in nodes
+        if n.parent_index == title.parent_index
+        and n.clazz == "android.widget.Button" and n.clickable and not n.checkable
+        and not (n.text or n.content_desc or n.resource_id)
+        and n.bounds is not None and n.visible_bounds == n.bounds
+        and top <= (n.bounds[1] + n.bounds[3]) / 2 <= bottom
+        and (n.bounds[0] + n.bounds[2]) / 2 < left
+    ])
+
+
+def vertical_scroll_gesture(nodes: list[UiNode]) -> tuple[int, int, int, int] | None:
+    """Scroll inside one visible vertical list; refuse nested/ambiguous lists."""
+    containers = [n for n in nodes if n.scrollable and n.enabled
+                  and n.clazz.endswith(("ScrollView", "RecyclerView"))
+                  and n.visible_bounds is not None]
+    container = _unique_visible(containers)
+    if container is None or container.visible_bounds is None:
+        return None
+    left, top, right, bottom = container.visible_bounds
+    x = (left + right) // 2
+    start, end = round(top + (bottom - top) * 0.8), round(top + (bottom - top) * 0.25)
+    # Do not begin a vertical scroll on an interactive slider/toggle.
+    for n in nodes:
+        if n.visible_bounds is None or not (n.checkable or n.clazz.endswith("SeekBar")):
+            continue
+        nl, nt, nr, nb = n.visible_bounds
+        if nl <= x <= nr and nt <= start <= nb:
+            return None
+    return (x, start, x, end) if start > end else None
+
+
+def legacy_vehicle_marker_point(nodes: list[UiNode]) -> tuple[int, int] | None:
+    """Compatibility for the measured Pixel map only; no extrapolation to other UIs.
+
+    Prefer an already-open vehicle card. The marker has no semantics in the
+    verified app; the historical 43% tap is allowed only with this complete
+    layout fingerprint. Other devices must expose Share without a guessed tap.
+    """
+    map_node = find_by_desc(nodes, r"^Google Map$")
+    find_vehicle = find_by_desc(nodes, r"^Find vehicle$")
+    if (map_node is None or find_vehicle is None
+            or map_node.window_bounds != (0, 0, 1080, 2340)
+            or map_node.bounds != (0, 0, 1080, 2151)
+            or map_node.visible_bounds != map_node.bounds
+            or find_vehicle.bounds != (949, 1359, 1005, 1415)):
+        return None
+    return 540, round(2151 * 0.43)
 
 
 def row_toggle(nodes: list[UiNode], label_pattern: str) -> UiNode | None:
@@ -62,8 +109,9 @@ def row_toggle(nodes: list[UiNode], label_pattern: str) -> UiNode | None:
     _, label_top, _, label_bottom = label.bounds
     candidates: list[UiNode] = []
     for node in nodes:
-        if not node.checkable or node.bounds is None or not node.enabled:
+        if not node.checkable or node.visible_bounds is None or not node.enabled:
             continue
+        assert node.bounds is not None
         _, top, _, bottom = node.bounds
         if min(bottom, label_bottom) >= max(top, label_top):
             candidates.append(node)
@@ -71,7 +119,19 @@ def row_toggle(nodes: list[UiNode], label_pattern: str) -> UiNode | None:
         return None
     # Compose emits several duplicate checkable nodes. Prefer the widest row
     # target so taps work even when the small visual switch moves slightly.
-    return max(candidates, key=lambda node: node.bounds[2] - node.bounds[0])  # type: ignore[index]
+    widest = max(candidates, key=lambda node: node.bounds[2] - node.bounds[0])  # type: ignore[index]
+    assert widest.bounds is not None
+    left, top, right, bottom = widest.bounds
+    tolerance = max(1, (bottom - top) * 0.02)  # Compose nested switch rounding
+    for n in candidates:
+        assert n.bounds is not None
+        nl, nt, nr, nb = n.bounds
+        if n.checked != widest.checked or not (
+            left - tolerance <= nl < nr <= right + tolerance
+            and top - tolerance <= nt < nb <= bottom + tolerance
+        ):
+            return None
+    return widest
 
 
 def parse_climate(nodes: list[UiNode]) -> dict[str, object]:
@@ -182,6 +242,7 @@ def charge_limit_gesture(
     current = parse_vehicle_settings(nodes).get("target_soc")
     if (
         slider is None or slider.bounds is None
+        or slider.visible_bounds != slider.bounds
         or slider.clazz != "android.widget.SeekBar"
         or not isinstance(current, int) or not 50 <= current <= 100
     ):
