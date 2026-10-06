@@ -40,6 +40,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.6.3] - 2026-10-06 — adaptive map centre with verified vehicle card
+
+### Fixed
+- **Remove the Pixel-only map-coordinate fallback.** After Find vehicle, the driver calculates a single candidate at the centre of the visible Google Map above its collapsed bottom sheet. It uses the current map/panel bounds, waits for camera movement, and refuses missing, ambiguous, side-panel or obstructed layouts. No fixed screen resolution or 43% vertical offset remains.
+- **Verify parking identity before sharing.** Share is accepted only in the parking card whose name matches the selected vehicle's overview header, with Close details view and Parked since in the same card subtree. The card is checked again immediately before tapping Share. A wrong POI or unverifiable card leaves the last-known location untouched. Existing cards still avoid the centre tap; no Agent update is required.
+
 ## [4.6.2] - 2026-10-06 — guarded navigation on different displays
 
 ### Fixed

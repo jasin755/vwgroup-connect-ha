@@ -16,7 +16,8 @@ from .vw_screen import (
     find_by_desc,
     find_by_rid,
     find_by_text,
-    legacy_vehicle_marker_point,
+    centered_vehicle_marker_point,
+    overview_vehicle_name,
     parse_climate,
     parse_climate_settings,
     parse_shared_location,
@@ -25,6 +26,7 @@ from .vw_screen import (
     parse_zones,
     row_toggle,
     vertical_scroll_gesture,
+    vehicle_map_share,
     zones_navigation_node,
 )
 
@@ -99,13 +101,18 @@ class VolkswagenAppDriver:
             f"Volkswagen app: timed out waiting for {reason}{suffix}"
         )
 
-    async def _tap(self, node: UiNode | None, *, reason: str) -> None:
+    async def _tap(
+        self, node: UiNode | None, *, reason: str,
+        validate_screen: Callable[[list[UiNode]], bool] | None = None,
+    ) -> None:
         if (node is None or node.tap_point is None
                 or node.visible_bounds != node.bounds):
             raise CompanionTransportError(f"Volkswagen app: could not find {reason}")
         # A layout transition between locating and tapping must not send a tap
         # to whatever happens to occupy the old coordinates.
         current = await self._nodes()
+        if validate_screen is not None and not validate_screen(current):
+            raise CompanionTransportError(f"Volkswagen app: screen verification failed before {reason}; no tap sent")
         if not any(
             n.enabled and n.visible_bounds == n.bounds == node.bounds
             and (n.resource_id, n.text, n.content_desc, n.clazz, n.checkable, n.checked)
@@ -288,32 +295,41 @@ class VolkswagenAppDriver:
 
     async def _read_location(self) -> dict[str, object]:
         nodes = await self.ensure_overview()
+        vehicle_name = overview_vehicle_name(nodes)
+        if vehicle_name is None:
+            raise CompanionTransportError("Volkswagen app: vehicle name unavailable; cannot verify map card")
         await self._tap_rid(nodes, "cat_nav_map_tab_navigation")
         map_nodes = await self._wait_for_nodes(
             lambda current: find_by_desc(current, r"^Find vehicle$") is not None,
             reason="vehicle map",
         )
         await self._tap_desc(map_nodes, r"^Find vehicle$")
+        # Map camera animation is not represented in accessibility node bounds.
+        # Allow it to finish before trying the geometric centre candidate.
+        await asyncio.sleep(0.75)
         map_nodes = await self._wait_for_nodes(
             lambda current: find_by_desc(current, r"^Google Map$") is not None,
             reason="centred vehicle map",
         )
         vehicle_card = map_nodes
-        if not self._fully_visible(find_by_text(vehicle_card, r"^Share$")):
-            marker = legacy_vehicle_marker_point(map_nodes)
+        if vehicle_map_share(vehicle_card, vehicle_name) is None:
+            marker = centered_vehicle_marker_point(map_nodes)
             if marker is None:
                 raise CompanionTransportError(
-                    "Volkswagen app: map marker has no accessibility target on this layout; "
-                    "open the vehicle card manually to expose Share"
+                    "Volkswagen app: map viewport/card cannot be verified; "
+                    "open the matching vehicle card manually to expose Share"
                 )
-            if legacy_vehicle_marker_point(await self._nodes()) != marker:
+            if centered_vehicle_marker_point(await self._nodes()) != marker:
                 raise CompanionTransportError("Volkswagen app: map layout changed; no marker tap sent")
             await self._t.tap(*marker)
             vehicle_card = await self._wait_for_nodes(
-                lambda current: find_by_text(current, r"^Share$") is not None,
-                reason="vehicle map card",
+                lambda current: vehicle_map_share(current, vehicle_name) is not None,
+                reason="matching vehicle parking card (name, Parked since, Share)",
             )
-        await self._tap_text(vehicle_card, r"^Share$")
+        await self._tap(
+            vehicle_map_share(vehicle_card, vehicle_name), reason="verified vehicle Share",
+            validate_screen=lambda current: vehicle_map_share(current, vehicle_name) is not None,
+        )
         share_sheet = await self._wait_for_nodes(
             lambda current: bool(parse_shared_location(current)),
             reason="shared Google Maps URL",

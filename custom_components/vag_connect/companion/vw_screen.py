@@ -83,22 +83,77 @@ def vertical_scroll_gesture(nodes: list[UiNode]) -> tuple[int, int, int, int] | 
     return (x, start, x, end) if start > end else None
 
 
-def legacy_vehicle_marker_point(nodes: list[UiNode]) -> tuple[int, int] | None:
-    """Compatibility for the measured Pixel map only; no extrapolation to other UIs.
+def overview_vehicle_name(nodes: list[UiNode]) -> str | None:
+    """Read the selected car name, including dots in models such as ID.3."""
+    header = find_by_desc(nodes, r"^Your vehicle:")
+    if header is None:
+        return None
+    match = re.match(r"^Your vehicle:\s*(.+?)\.\s+Vehicle is\b", header.content_desc)
+    return " ".join(match.group(1).split()) if match else None
 
-    Prefer an already-open vehicle card. The marker has no semantics in the
-    verified app; the historical 43% tap is allowed only with this complete
-    layout fingerprint. Other devices must expose Share without a guessed tap.
+
+def centered_vehicle_marker_point(nodes: list[UiNode]) -> tuple[int, int] | None:
+    """After Find vehicle, try the centre of the map above its collapsed sheet.
+
+    The marker has no semantics. This is a geometric candidate, not evidence
+    that a vehicle is there: the driver MUST validate the resulting card before
+    sharing its coordinates. No Pixel resolution or fixed percentage is used.
     """
     map_node = find_by_desc(nodes, r"^Google Map$")
     find_vehicle = find_by_desc(nodes, r"^Find vehicle$")
-    if (map_node is None or find_vehicle is None
-            or map_node.window_bounds != (0, 0, 1080, 2340)
-            or map_node.bounds != (0, 0, 1080, 2151)
+    sheet = find_by_desc(nodes, r"^Bottom sheet collapsed$")
+    if (map_node is None or map_node.bounds is None or find_vehicle is None
+            or sheet is None or sheet.bounds is None
             or map_node.visible_bounds != map_node.bounds
-            or find_vehicle.bounds != (949, 1359, 1005, 1415)):
+            or sheet.visible_bounds != sheet.bounds
+            or find_by_desc(nodes, r"^Close details view$") is not None):
         return None
-    return 540, round(2151 * 0.43)
+    left, top, right, bottom = map_node.bounds
+    sl, st, sr, sb = sheet.bounds
+    if not (sl <= left < right <= sr and top < st < sb <= bottom):
+        return None  # side panel, expanded sheet or mismatched coordinate space
+    x, y = (left + right) // 2, (top + st) // 2
+    for n in nodes:
+        if n is map_node or not n.enabled or not n.clickable or n.visible_bounds is None:
+            continue
+        nl, nt, nr, nb = n.visible_bounds
+        covers_map = nl <= left and nt <= top and nr >= right and nb >= bottom
+        if not covers_map and nl <= x <= nr and nt <= y <= nb:
+            return None  # an interactive overlay covers the candidate
+    return x, y
+
+
+def vehicle_map_share(nodes: list[UiNode], expected_name: str) -> UiNode | None:
+    """Accept Share only inside this car's parking card, never a POI card.
+
+    The captured VW card has name, Close details view and Parked since under
+    the same parent, with Share in a nested action row. Restrict all evidence
+    to that subtree so a matching label elsewhere on the map is insufficient.
+    """
+    names = [n for n in nodes if " ".join(n.text.split()) == expected_name]
+    title = _unique_visible(names)
+    if title is None or title.parent_index is None:
+        return None
+    card_index = title.parent_index
+    card = nodes[card_index]
+    map_node = find_by_desc(nodes, r"^Google Map$")
+    sheet = find_by_desc(nodes, r"^Bottom sheet (?:collapsed|expanded)$")
+    if (map_node is None or map_node.bounds is None or card.visible_bounds is None
+            or sheet is None or sheet.bounds is None
+            or card.visible_bounds[1] < sheet.bounds[1]):
+        return None
+    subtree = []
+    for n in nodes:
+        parent = n.parent_index
+        while parent is not None and parent != card_index:
+            parent = nodes[parent].parent_index
+        if parent == card_index:
+            subtree.append(n)
+    if (find_by_desc(subtree, r"^Close details view$") is None
+            or find_by_text(subtree, r"\bParked since\b") is None):
+        return None
+    share = find_by_text(subtree, r"^Share$")
+    return share if share is not None and share.visible_bounds == share.bounds else None
 
 
 def row_toggle(nodes: list[UiNode], label_pattern: str) -> UiNode | None:

@@ -118,10 +118,17 @@ Slider gestures use the controls' current dimensions. Tests cover scaled layouts
 and rejected off-screen/ambiguous targets; they do not replace real-device tests.
 
 GPS sharing still has a limitation: the Volkswagen map marker has no accessible
-identifier. The driver uses Share directly when the vehicle card is open. An
-unlabelled-marker tap is allowed only for the measured Pixel layout; on other
-layouts, open the vehicle's map card manually or leave GPS unavailable. The
-integration logs which optional screen could not be read.
+identifier. From 4.6.3, after Find vehicle centres the map, the driver can tap the
+centre of its visible area above the collapsed bottom panel, using their current
+bounds. This replaces the Pixel-only coordinate fallback. An already-open,
+verified vehicle card goes directly to Share.
+
+The centre is a candidate, not proof of a marker: before sharing, the resulting
+card must match the overview vehicle name and contain parking information and
+Share in the same card. Missing/ambiguous panel geometry or a wrong POI stops GPS
+reading and preserves the last-known location. This flow has been exercised with
+a closed card and a panned/recentred map on the Pixel; other physical devices
+still need validation. The integration logs which optional screen could not be read.
 
 Test the reads and each intended control on a new phone before automating them.
 
@@ -312,6 +319,7 @@ instead of uninstalling immediately.
 | Values are unknown | Volkswagen app 4.3.2 in English, logged in, ID.3 overview visible |
 | Overview updates but Settings/Health/GPS do not | Enable both extended companion options and wait for the 15-minute navigation cycle |
 | App ends on another screen | Open the vehicle overview, reload integration, download diagnostics if it repeats |
+| Map viewport or vehicle card cannot be verified | Keep the map in its normal collapsed-panel layout; the card must show the same vehicle name as the overview and parking information. Try opening that card manually. Unverified locations are not published. |
 | Doors/windows remain open after closing all | Use integration 4.4.2 or newer |
 | `could not return to overview` repair | Use 4.5.2 or newer; a one-off transition is failure-soft |
 | No phone battery sensor | Agent 0.5.0+ and integration 4.5.0+, then restart HA |
