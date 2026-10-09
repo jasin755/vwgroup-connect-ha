@@ -113,12 +113,27 @@ def centered_vehicle_marker_point(nodes: list[UiNode]) -> tuple[int, int] | None
     if not (sl <= left < right <= sr and top < st < sb <= bottom):
         return None  # side panel, expanded sheet or mismatched coordinate space
     x, y = (left + right) // 2, (top + st) // 2
+    map_index = next(i for i, node in enumerate(nodes) if node is map_node)
+    marker_bounds: set[tuple[int, int, int, int]] = set()
     for n in nodes:
         if n is map_node or not n.enabled or not n.clickable or n.visible_bounds is None:
             continue
         nl, nt, nr, nb = n.visible_bounds
         covers_map = nl <= left and nt <= top and nr >= right and nb >= bottom
         if not covers_map and nl <= x <= nr and nt <= y <= nb:
+            # Google Maps sometimes exposes the marker itself as an unlabelled
+            # clickable View. It is a small direct map child, not a sibling UI
+            # overlay. Allow one such candidate under the centre; its identity
+            # is still untrusted until the driver verifies the opened card.
+            if (n.parent_index == map_index and n.clazz == "android.view.View"
+                    and not (n.text or n.content_desc or n.resource_id or n.checkable or n.scrollable)
+                    and n.visible_bounds == n.bounds
+                    and n.package in {"", "com.volkswagen.weconnect"}
+                    and left <= nl < nr <= right and top <= nt < nb <= st
+                    and nr - nl <= (right - left) / 4 and nb - nt <= (st - top) / 4):
+                marker_bounds.add(n.visible_bounds)
+                if len(marker_bounds) == 1:
+                    continue
             return None  # an interactive overlay covers the candidate
     return x, y
 

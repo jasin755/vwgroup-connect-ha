@@ -104,17 +104,27 @@ class VolkswagenAppDriver:
     async def _tap(
         self, node: UiNode | None, *, reason: str,
         validate_screen: Callable[[list[UiNode]], bool] | None = None,
+        allow_clipped: bool = False,
     ) -> None:
         if (node is None or node.tap_point is None
-                or node.visible_bounds != node.bounds):
+                or (node.visible_bounds != node.bounds and not allow_clipped)):
             raise CompanionTransportError(f"Volkswagen app: could not find {reason}")
+        if allow_clipped:
+            # The map card's Close icon slightly overlaps its ScrollView edge.
+            # Only explicitly opted-in controls may use their visible centre,
+            # and a mostly hidden control is still not a safe target.
+            assert node.bounds is not None and node.visible_bounds is not None
+            left, top, right, bottom = node.bounds
+            vl, vt, vr, vb = node.visible_bounds
+            if (vr - vl) * (vb - vt) < (right - left) * (bottom - top) / 2:
+                raise CompanionTransportError(f"Volkswagen app: {reason} is mostly clipped; no tap sent")
         # A layout transition between locating and tapping must not send a tap
         # to whatever happens to occupy the old coordinates.
         current = await self._nodes()
         if validate_screen is not None and not validate_screen(current):
             raise CompanionTransportError(f"Volkswagen app: screen verification failed before {reason}; no tap sent")
         if not any(
-            n.enabled and n.visible_bounds == n.bounds == node.bounds
+            n.enabled and n.bounds == node.bounds and n.visible_bounds == node.visible_bounds
             and (n.resource_id, n.text, n.content_desc, n.clazz, n.checkable, n.checked)
             == (node.resource_id, node.text, node.content_desc, node.clazz, node.checkable, node.checked)
             and n.package in {"", "com.volkswagen.weconnect"}
@@ -303,29 +313,37 @@ class VolkswagenAppDriver:
             lambda current: find_by_desc(current, r"^Find vehicle$") is not None,
             reason="vehicle map",
         )
+        # VW can update an open card's address while its Share action retains
+        # the previous parking coordinates. Find vehicle alone does not refresh
+        # that action: close the old card and select the centred marker afresh.
+        close = find_by_desc(map_nodes, r"^Close details view$")
+        if close is not None:
+            await self._tap(
+                close, reason="vehicle parking card Close", allow_clipped=True,
+                validate_screen=lambda current: vehicle_map_share(current, vehicle_name) is not None,
+            )
+            map_nodes = await self._wait_for_nodes(
+                lambda current: find_by_desc(current, r"^Find vehicle$") is not None
+                and find_by_desc(current, r"^Close details view$") is None
+                and find_by_text(current, r"^Share$") is None,
+                reason="old vehicle parking card to close",
+            )
         await self._tap_desc(map_nodes, r"^Find vehicle$")
         # Map camera animation is not represented in accessibility node bounds.
         # Allow it to finish before trying the geometric centre candidate.
         await asyncio.sleep(0.75)
         map_nodes = await self._wait_for_nodes(
-            lambda current: find_by_desc(current, r"^Google Map$") is not None,
-            reason="centred vehicle map",
+            lambda current: centered_vehicle_marker_point(current) is not None,
+            reason="centred vehicle map (viewport/card cannot be verified)",
         )
-        vehicle_card = map_nodes
-        if vehicle_map_share(vehicle_card, vehicle_name) is None:
-            marker = centered_vehicle_marker_point(map_nodes)
-            if marker is None:
-                raise CompanionTransportError(
-                    "Volkswagen app: map viewport/card cannot be verified; "
-                    "open the matching vehicle card manually to expose Share"
-                )
-            if centered_vehicle_marker_point(await self._nodes()) != marker:
-                raise CompanionTransportError("Volkswagen app: map layout changed; no marker tap sent")
-            await self._t.tap(*marker)
-            vehicle_card = await self._wait_for_nodes(
-                lambda current: vehicle_map_share(current, vehicle_name) is not None,
-                reason="matching vehicle parking card (name, Parked since, Share)",
-            )
+        marker = centered_vehicle_marker_point(map_nodes)
+        if marker is None or centered_vehicle_marker_point(await self._nodes()) != marker:
+            raise CompanionTransportError("Volkswagen app: map layout changed; no marker tap sent")
+        await self._t.tap(*marker)
+        vehicle_card = await self._wait_for_nodes(
+            lambda current: vehicle_map_share(current, vehicle_name) is not None,
+            reason="fresh matching vehicle parking card (name, Parked since, Share)",
+        )
         await self._tap(
             vehicle_map_share(vehicle_card, vehicle_name), reason="verified vehicle Share",
             validate_screen=lambda current: vehicle_map_share(current, vehicle_name) is not None,

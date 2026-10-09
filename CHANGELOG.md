@@ -40,6 +40,13 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.6.4] - 2026-10-09 — refresh the parking card before reading GPS
+
+### Fixed
+- **Do not reuse stale Share coordinates.** Volkswagen can update the address on an already-open vehicle card while its Share action still returns a previous parking location. Every GPS read now closes an existing verified vehicle card, waits for it to disappear, recentres the map and reopens the vehicle marker before sharing. This prevents a parked-at-home car from staying away in Home Assistant because of the old card.
+- **Keep navigation guarded.** Wait for valid, stable map geometry and verify the newly opened card's vehicle identity before Share. The partly clipped Close icon uses only its visible centre after rechecking its bounds and card; other taps still require full visibility. No Android Agent update is required.
+- **Recognize the map marker's optional accessibility node.** A single small unlabelled View directly inside Google Map at the candidate position no longer gets mistaken for an obstructing overlay. Sibling overlays, labelled controls and ambiguous overlapping candidates still block the tap; vehicle identity must still be confirmed in the opened card.
+
 ## [4.6.3] - 2026-10-06 — adaptive map centre with verified vehicle card
 
 ### Fixed

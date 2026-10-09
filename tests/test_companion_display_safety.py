@@ -11,6 +11,7 @@ from custom_components.vag_connect.companion.transport import CompanionTransport
 from custom_components.vag_connect.companion.vw_driver import VolkswagenAppDriver
 from custom_components.vag_connect.companion.vw_screen import (
     charge_limit_gesture,
+    find_by_desc,
     find_by_rid,
     find_by_text,
     centered_vehicle_marker_point,
@@ -193,7 +194,8 @@ def test_charge_slider_coordinates_scale_with_actual_geometry(scale: float) -> N
 
 def map_card(name: str = "ID.3 Pro Performance", *, parked: bool = True) -> str:
     return node(
-        node(**{"content-desc": "Close details view", "bounds": "[620,850][680,890]"})
+        # Like the real VW card, Close straddles the scrolling viewport edge.
+        node(**{"content-desc": "Close details view", "clickable": "true", "bounds": "[620,830][680,890]"})
         + node(text=name, bounds="[40,890][340,920]")
         + (node(text="Test address. Parked since 1h", bounds="[40,925][600,965]") if parked else "")
         + node(node(text="Share", bounds="[200,1000][300,1040]"), bounds="[180,980][320,1080]"),
@@ -201,9 +203,9 @@ def map_card(name: str = "ID.3 Pro Performance", *, parked: bool = True) -> str:
     )
 
 
-def map_page(card: str = "", *, sheet: bool = True) -> str:
+def map_page(card: str = "", *, sheet: bool = True, map_children: str = "") -> str:
     return window(
-        node(**{"content-desc": "Google Map", "bounds": "[0,0][720,1150]"})
+        node(map_children, **{"content-desc": "Google Map", "bounds": "[0,0][720,1150]"})
         + node(**{"content-desc": "Find vehicle", "bounds": "[600,600][660,660]"})
         + (node(**{"content-desc": "Bottom sheet collapsed", "bounds": "[0,800][720,830]"}) if sheet else "")
         + card, 720, 1280,
@@ -219,38 +221,113 @@ def map_overview() -> str:
 
 
 class _MapTransport:
-    def __init__(self, *, card_open: bool = False, card_name: str = "ID.3 Pro Performance", sheet: bool = True) -> None:
+    def __init__(
+        self, *, card_open: bool = False, card_name: str = "ID.3 Pro Performance",
+        sheet: bool = True, close_works: bool = True, accessible_marker: bool = False,
+    ) -> None:
         self.page = "overview"
         self.card_open = card_open
         self.card_name = card_name
         self.sheet = sheet
+        self.close_works = close_works
+        self.fresh_card = False
+        self.accessible_marker = accessible_marker
         self.taps: list[tuple[int, int]] = []
 
     async def dump_ui(self) -> str:
         return map_overview() if self.page == "overview" else map_page(
             map_card(self.card_name) if self.card_open else "", sheet=self.sheet,
+            map_children=node(clickable="true", bounds="[340,390][380,450]") if self.accessible_marker else "",
         )
 
     async def dump_active_ui(self) -> str:
         assert self.taps[-1] == (250, 1020)  # verified Share was actually tapped
-        return window(node(text="https://www.google.com/maps/place/50.1,14.2", bounds="[0,300][600,500]"), 720, 1280)
+        # Address/name are identical in both cards. Only selecting the marker
+        # again refreshes the URL; Find vehicle deliberately does not do so.
+        coords = "50.1,14.2" if self.fresh_card else "50.9,14.9"
+        return window(node(text=f"https://www.google.com/maps/place/{coords}", bounds="[0,300][600,500]"), 720, 1280)
 
     async def tap(self, x: int, y: int) -> None:
         self.taps.append((x, y))
         if self.page == "overview":
             self.page = "map"
+        elif (x, y) == (650, 865) and self.close_works:
+            self.card_open = False
         elif (x, y) == (360, 400):
             self.card_open = True
+            self.fresh_card = True
 
 
 @pytest.mark.parametrize("card_open", [True, False])
-async def test_non_pixel_map_reads_verified_card_with_or_without_center_tap(card_open: bool) -> None:
-    transport = _MapTransport(card_open=card_open)
+@pytest.mark.parametrize("accessible_marker", [True, False])
+async def test_map_reopens_stale_card_before_sharing_even_if_address_matches(
+    card_open: bool, accessible_marker: bool,
+) -> None:
+    transport = _MapTransport(card_open=card_open, accessible_marker=accessible_marker)
     driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
     driver.ensure_overview = AsyncMock(return_value=parse_ui_dump(map_overview()))
     assert await driver._read_location() == {"latitude": 50.1, "longitude": 14.2}
-    assert len(transport.taps) == (3 if card_open else 4)
-    assert ((360, 400) in transport.taps) is not card_open
+    expected = [(325, 1195)]  # map tab
+    if card_open:
+        expected.append((650, 865))  # visible centre of partly clipped Close
+    expected.extend([(630, 630), (360, 400), (250, 1020)])  # Find, marker, Share
+    assert transport.taps == expected
+
+
+async def test_failed_card_close_never_shares_stale_location() -> None:
+    transport = _MapTransport(card_open=True, close_works=False)
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    driver.ensure_overview = AsyncMock(return_value=parse_ui_dump(map_overview()))
+    with pytest.raises(CompanionTransportError, match="old vehicle parking card to close"):
+        await driver._read_location()
+    assert transport.taps == [(325, 1195), (650, 865)]
+
+
+async def test_each_gps_read_reselects_marker_instead_of_reusing_previous_card() -> None:
+    transport = _MapTransport()
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    driver.ensure_overview = AsyncMock(return_value=parse_ui_dump(map_overview()))
+    for _ in range(2):
+        transport.page = "overview"
+        transport.fresh_card = False  # another parking event, same visible card
+        assert await driver._read_location() == {"latitude": 50.1, "longitude": 14.2}
+    assert transport.taps.count((360, 400)) == 2
+    assert transport.taps.count((650, 865)) == 1
+
+
+async def test_partial_visibility_remains_rejected_for_normal_taps() -> None:
+    nodes = parse_ui_dump(map_page(map_card()))
+    transport = AsyncMock()
+    driver = VolkswagenAppDriver(transport)
+    with pytest.raises(CompanionTransportError, match="could not find Close"):
+        await driver._tap(find_by_desc(nodes, r"^Close details view$"), reason="Close")
+    transport.tap.assert_not_awaited()
+
+
+async def test_clipped_close_rechecks_visible_viewport_before_tapping() -> None:
+    old = map_page(map_card())
+    moved = old.replace("[0,840][720,1150]", "[0,850][720,1150]")
+    transport = AsyncMock()
+    transport.dump_ui.return_value = moved
+    driver = VolkswagenAppDriver(transport)
+    with pytest.raises(CompanionTransportError, match="layout changed"):
+        await driver._tap(
+            find_by_desc(parse_ui_dump(old), r"^Close details view$"),
+            reason="Close", allow_clipped=True,
+        )
+    transport.tap.assert_not_awaited()
+
+
+async def test_mostly_clipped_close_is_not_tapped() -> None:
+    xml = map_page(map_card()).replace("[620,830][680,890]", "[620,750][680,890]")
+    transport = AsyncMock()
+    driver = VolkswagenAppDriver(transport)
+    with pytest.raises(CompanionTransportError, match="mostly clipped"):
+        await driver._tap(
+            find_by_desc(parse_ui_dump(xml), r"^Close details view$"),
+            reason="Close", allow_clipped=True,
+        )
+    transport.tap.assert_not_awaited()
 
 
 @pytest.mark.parametrize("card_open", [True, False])
@@ -277,6 +354,43 @@ def test_share_from_another_panel_cannot_borrow_vehicle_identity() -> None:
 def test_overlay_covering_map_centre_blocks_candidate() -> None:
     xml = map_page(node(clickable="true", text="Search", bounds="[200,300][500,500]"))
     assert centered_vehicle_marker_point(parse_ui_dump(xml)) is None
+
+
+@pytest.mark.parametrize("scale", [2 / 3, 1, 4 / 3])
+def test_unlabelled_map_marker_is_not_mistaken_for_overlay(scale: float) -> None:
+    def bounds(l: int, t: int, r: int, b: int) -> str:
+        return f"[{round(l * scale)},{round(t * scale)}][{round(r * scale)},{round(b * scale)}]"
+    xml = window(
+        node(node(clickable="true", bounds=bounds(340,390,380,450)),
+             **{"content-desc": "Google Map", "bounds": bounds(0,0,720,1150)})
+        + node(**{"content-desc": "Find vehicle", "bounds": bounds(600,600,660,660)})
+        + node(**{"content-desc": "Bottom sheet collapsed", "bounds": bounds(0,800,720,830)}),
+        round(720 * scale), round(1280 * scale),
+    )
+    assert centered_vehicle_marker_point(parse_ui_dump(xml)) == (
+        round(720 * scale) // 2, round(800 * scale) // 2,
+    )
+
+
+@pytest.mark.parametrize("attrs", [
+    {"text": "Search"}, {"content-desc": "Zoom"}, {"resource-id": "map_control"},
+    {"class": "android.widget.Button"}, {"checkable": "true"},
+    {"bounds": "[100,100][600,700]"}, {"package": "another.app"},
+])
+def test_map_child_controls_are_not_treated_as_markers(attrs: dict[str, str]) -> None:
+    child = node(**{"clickable": "true", "bounds": "[340,390][380,450]", **attrs})
+    assert centered_vehicle_marker_point(parse_ui_dump(map_page(map_children=child))) is None
+
+
+def test_unlabelled_sibling_overlay_still_blocks_marker_tap() -> None:
+    xml = map_page(node(clickable="true", bounds="[340,390][380,450]"))
+    assert centered_vehicle_marker_point(parse_ui_dump(xml)) is None
+
+
+def test_two_overlapping_map_candidates_are_ambiguous() -> None:
+    children = (node(clickable="true", bounds="[340,390][380,450]")
+                + node(clickable="true", bounds="[330,380][370,440]"))
+    assert centered_vehicle_marker_point(parse_ui_dump(map_page(map_children=children))) is None
 
 
 async def test_missing_overview_vehicle_name_prevents_navigation() -> None:

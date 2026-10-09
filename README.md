@@ -120,8 +120,10 @@ and rejected off-screen/ambiguous targets; they do not replace real-device tests
 GPS sharing still has a limitation: the Volkswagen map marker has no accessible
 identifier. From 4.6.3, after Find vehicle centres the map, the driver can tap the
 centre of its visible area above the collapsed bottom panel, using their current
-bounds. This replaces the Pixel-only coordinate fallback. An already-open,
-verified vehicle card goes directly to Share.
+bounds. This replaces the Pixel-only coordinate fallback. From 4.6.4, an
+already-open vehicle card is closed and the marker selected again before Share:
+VW may update the displayed address while retaining old coordinates in that
+card's Share action. Recentering alone does not refresh the shared location.
 
 The centre is a candidate, not proof of a marker: before sharing, the resulting
 card must match the overview vehicle name and contain parking information and
