@@ -12,7 +12,7 @@ from custom_components.vag_connect.companion.agent_transport import (
     AgentHttpTransport,
     discover_agent_from_addon,
 )
-from custom_components.vag_connect.companion.transport import CompanionTransportError
+from custom_components.vag_connect.companion.transport import CompanionAutomationPaused, CompanionTransportError
 
 
 class _Resp:
@@ -61,6 +61,15 @@ class _Session:
 
 _TOKEN = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 _XML = '<?xml version="1.0"?><hierarchy><node text="58%"/></hierarchy>'
+
+
+@pytest.mark.asyncio
+async def test_local_pause_is_distinct_from_transport_failure() -> None:
+    session = _Session([_Resp(409, "automation_paused")])
+    transport = AgentHttpTransport("192.168.1.42", token=_TOKEN, session=session)
+    with pytest.raises(CompanionAutomationPaused, match="paused on the phone"):
+        await transport.foreground_app("com.volkswagen.weconnect")
+    assert len(session.calls) == 1  # no launch after the rejected wake
 
 
 @pytest.mark.asyncio

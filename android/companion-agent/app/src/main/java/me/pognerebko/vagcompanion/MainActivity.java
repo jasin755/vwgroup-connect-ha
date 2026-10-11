@@ -17,6 +17,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.Switch;
 
 import java.security.SecureRandom;
 
@@ -27,6 +28,8 @@ public final class MainActivity extends Activity {
     private TextView configurationStatus;
     private EditText relayUrl;
     private EditText token;
+    private Switch automationSwitch;
+    private TextView automationStatus;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -43,6 +46,23 @@ public final class MainActivity extends Activity {
         title.setTextColor(Color.WHITE);
         title.setTextSize(26);
         root.addView(title, matchWrap(0, dp(18)));
+
+        automationSwitch = new Switch(this);
+        automationSwitch.setText(R.string.automation_switch);
+        automationSwitch.setTextColor(Color.WHITE);
+        automationSwitch.setTextSize(20);
+        automationSwitch.setPadding(0, dp(12), 0, dp(12));
+        automationSwitch.setChecked(!VagAccessibilityService.isPaused(this));
+        automationSwitch.setOnCheckedChangeListener((button, enabled) -> {
+            VagAccessibilityService.setPaused(this, !enabled);
+            updateAutomationStatus();
+        });
+        root.addView(automationSwitch, matchWrap(0, dp(8)));
+
+        automationStatus = new TextView(this);
+        automationStatus.setTextColor(Color.LTGRAY);
+        automationStatus.setTextSize(16);
+        root.addView(automationStatus, matchWrap(0, dp(20)));
 
         status = new TextView(this);
         status.setTextColor(Color.LTGRAY);
@@ -118,6 +138,10 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // HA must not steal the screen while the user reaches the pause switch.
+        VagAccessibilityService.setControlsVisible(true);
+        automationSwitch.setChecked(!VagAccessibilityService.isPaused(this));
+        updateAutomationStatus();
         boolean configured = isServiceConfigured();
         boolean connected = VagAccessibilityService.getInstance() != null;
         status.setText(configured && connected
@@ -127,6 +151,18 @@ public final class MainActivity extends Activity {
                 ? Color.rgb(76, 217, 100)
                 : Color.rgb(255, 159, 10));
         updateConfigurationStatus();
+    }
+
+    @Override
+    protected void onPause() {
+        VagAccessibilityService.setControlsVisible(false);
+        super.onPause();
+    }
+
+    private void updateAutomationStatus() {
+        boolean paused = VagAccessibilityService.isPaused(this);
+        automationStatus.setText(paused ? R.string.automation_paused : R.string.automation_running);
+        automationStatus.setTextColor(paused ? Color.rgb(255, 159, 10) : Color.LTGRAY);
     }
 
     private void saveConfiguration() {

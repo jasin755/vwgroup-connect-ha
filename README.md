@@ -200,7 +200,7 @@ then open the downloaded APK. No ADB, root or Wireless Debugging is required.
 Current SHA-256:
 
 ```text
-1a749824d10b49f6f8a2122599c82c8c7cf310286b055d5420afb2ac0d4e6aa7
+0170b04335e8c36157d8261247f2de08dbf832972bcc074037b639ced637ed01
 ```
 
 Repository files:
@@ -295,6 +295,19 @@ Expected signals:
   receives the change;
 - Wireless Debugging is off.
 
+## Pause automation to use OBDeleven
+
+With **Agent 0.7.0+**, open **VAG Companion Agent** on the phone and turn off
+**VW automation** at the top. VW data collection and remote car controls stop;
+the Agent no longer switches apps, taps or scrolls. The pause survives a phone
+restart. Home Assistant retains the last known car values, while the phone
+battery sensor continues updating for your charging smart plug.
+
+Simply opening this control screen also temporarily suspends automation. To
+resume, turn the switch on and leave the Agent screen. The next HA poll or
+**Refresh Data** resumes reading. Use integration **4.6.5+** so an intentional
+pause is not treated as a connection failure. No new permissions are needed.
+
 ## Updating
 
 ### Home Assistant integration
@@ -325,7 +338,8 @@ instead of uninstalling immediately.
 | Doors/windows remain open after closing all | Use integration 4.4.2 or newer |
 | `could not return to overview` repair | Use 4.5.2 or newer; a one-off transition is failure-soft |
 | No phone battery sensor | Agent 0.5.0+ and integration 4.5.0+, then restart HA |
-| Display turns off | Agent 0.5.1+, AccessibilityService enabled; `/health` should show `keep_screen_awake: true` |
+| Display turns off | Agent 0.5.1+, AccessibilityService enabled and automation not paused; `/health` should show `keep_screen_awake: true` |
+| Data stopped after using another app | Open VAG Companion Agent, enable VW automation, then leave its control screen. Paused car values are last-known, not live. |
 | Commands unavailable | Confirm app version is accepted and `companion_writes_enabled` is true in diagnostics |
 
 ### Direct Agent health check
@@ -336,14 +350,15 @@ From a machine on the phone's LAN:
 curl -H 'X-Token: YOUR_TOKEN' http://PHONE_IP:8765/health
 ```
 
-Healthy Agent 0.6.0 output includes:
+Healthy Agent 0.7.0 output includes:
 
 ```json
 {
   "status": "ok",
   "vw_version": "4.3.2",
   "phone_battery_level": 58,
-  "keep_screen_awake": true
+  "keep_screen_awake": true,
+  "automation_paused": false
 }
 ```
 

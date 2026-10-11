@@ -3,6 +3,7 @@ package me.pognerebko.vagcompanion;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -18,11 +19,15 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 public final class VagAccessibilityService extends AccessibilityService {
     public static final String VOLKSWAGEN_PACKAGE = "com.volkswagen.weconnect";
 
     private static volatile VagAccessibilityService instance;
+    private static boolean controlsVisible;
+    private final AutomationGate automation = new AutomationGate();
 
     private final Object revisionMonitor = new Object();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -37,10 +42,59 @@ public final class VagAccessibilityService extends AccessibilityService {
         return instance;
     }
 
+    static boolean isPaused(Context context) {
+        return context.getSharedPreferences("agent", MODE_PRIVATE)
+                .getBoolean("automation_paused", false);
+    }
+
+    // Called only by the local Activity on the main thread. No remote resume.
+    static void setPaused(Context context, boolean paused) {
+        context.getSharedPreferences("agent", MODE_PRIVATE).edit()
+                .putBoolean("automation_paused", paused).apply();
+        if (instance != null) {
+            instance.automation.setPaused(paused);
+            instance.automationStateChanged();
+        }
+    }
+
+    static void setControlsVisible(boolean visible) {
+        controlsVisible = visible;
+        if (instance != null) {
+            instance.automation.setControlsVisible(visible);
+            instance.automationStateChanged();
+        }
+    }
+
+    boolean isAutomationSuspended() {
+        return automation.isSuspended();
+    }
+
+    long automationLease() {
+        return automation.lease();
+    }
+
+    boolean allowsAutomation(long lease) {
+        return automation.allows(lease);
+    }
+
+    private void automationStateChanged() {
+        if (isAutomationSuspended()) {
+            releaseScreenWakeLock();
+        } else {
+            acquireScreenWakeLock();
+        }
+        bumpRevision(VOLKSWAGEN_PACKAGE, "automation-state");
+        if (relayClient != null) {
+            relayClient.onAccessibilityChanged(getRevision());
+        }
+    }
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
+        automation.setPaused(isPaused(this));
+        automation.setControlsVisible(controlsVisible);
         acquireScreenWakeLock();
         httpServer = new AgentHttpServer(this);
         httpServer.start();
@@ -53,7 +107,7 @@ public final class VagAccessibilityService extends AccessibilityService {
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event == null) {
+        if (event == null || isAutomationSuspended()) {
             return;
         }
         CharSequence packageName = event.getPackageName();
@@ -169,24 +223,7 @@ public final class VagAccessibilityService extends AccessibilityService {
     }
 
     boolean tap(int x, int y, long timeoutMs) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            return tapOnMainThread(x, y);
-        }
-        AtomicReference<Boolean> accepted = new AtomicReference<>(false);
-        CountDownLatch done = new CountDownLatch(1);
-        mainHandler.post(() -> {
-            try {
-                accepted.set(tapOnMainThread(x, y));
-            } finally {
-                done.countDown();
-            }
-        });
-        try {
-            done.await(Math.max(1, timeoutMs), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-        }
-        return accepted.get();
+        return runAutomationAction(() -> tapOnMainThread(x, y), timeoutMs);
     }
 
     boolean swipe(
@@ -196,49 +233,16 @@ public final class VagAccessibilityService extends AccessibilityService {
             int y2,
             long durationMs,
             long timeoutMs) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            return swipeOnMainThread(x1, y1, x2, y2, durationMs);
-        }
-        AtomicReference<Boolean> accepted = new AtomicReference<>(false);
-        CountDownLatch done = new CountDownLatch(1);
-        mainHandler.post(() -> {
-            try {
-                accepted.set(swipeOnMainThread(x1, y1, x2, y2, durationMs));
-            } finally {
-                done.countDown();
-            }
-        });
-        try {
-            done.await(Math.max(1, timeoutMs), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-        }
-        return accepted.get();
+        return runAutomationAction(
+                () -> swipeOnMainThread(x1, y1, x2, y2, durationMs), timeoutMs);
     }
 
     boolean pressBack(long timeoutMs) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            return performGlobalAction(GLOBAL_ACTION_BACK);
-        }
-        AtomicReference<Boolean> accepted = new AtomicReference<>(false);
-        CountDownLatch done = new CountDownLatch(1);
-        mainHandler.post(() -> {
-            try {
-                accepted.set(performGlobalAction(GLOBAL_ACTION_BACK));
-            } finally {
-                done.countDown();
-            }
-        });
-        try {
-            done.await(Math.max(1, timeoutMs), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-        }
-        return accepted.get();
+        return runAutomationAction(() -> performGlobalAction(GLOBAL_ACTION_BACK), timeoutMs);
     }
 
     boolean lockScreen(long timeoutMs) {
-        return performGlobalActionOnMain(GLOBAL_ACTION_LOCK_SCREEN, timeoutMs);
+        return runAutomationAction(() -> performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN), timeoutMs);
     }
 
     boolean isPackageForeground(String packageName, long timeoutMs) {
@@ -263,27 +267,14 @@ public final class VagAccessibilityService extends AccessibilityService {
     }
 
     boolean launchPackage(String packageName, long timeoutMs) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            return launchPackageOnMain(packageName);
-        }
-        AtomicReference<Boolean> launched = new AtomicReference<>(false);
-        CountDownLatch done = new CountDownLatch(1);
-        mainHandler.post(() -> {
-            try {
-                launched.set(launchPackageOnMain(packageName));
-            } finally {
-                done.countDown();
-            }
-        });
-        try {
-            done.await(Math.max(1, timeoutMs), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-        }
-        return launched.get();
+        return runAutomationAction(() -> launchPackageOnMain(packageName), timeoutMs);
     }
 
     boolean wakeScreen() {
+        return runAutomationAction(this::wakeScreenOnMainThread, 2_000);
+    }
+
+    private boolean wakeScreenOnMainThread() {
         PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
         if (power == null || power.isInteractive()) {
             return true;
@@ -300,6 +291,9 @@ public final class VagAccessibilityService extends AccessibilityService {
 
     @SuppressLint("WakelockTimeout")
     private void acquireScreenWakeLock() {
+        if (isAutomationSuspended()) {
+            return;
+        }
         if (screenWakeLock != null && screenWakeLock.isHeld()) {
             return;
         }
@@ -354,6 +348,9 @@ public final class VagAccessibilityService extends AccessibilityService {
     }
 
     private Snapshot snapshotOnMainThread(boolean allowActiveSystemWindow) {
+        if (isAutomationSuspended()) {
+            return Snapshot.error("automation_paused", getRevision());
+        }
         AccessibilityNodeInfo root = findActiveRoot(allowActiveSystemWindow);
         if (root == null) {
             return Snapshot.error("no_volkswagen_window", getRevision());
@@ -419,15 +416,22 @@ public final class VagAccessibilityService extends AccessibilityService {
         return dispatchGesture(gesture, null, null);
     }
 
-    private boolean performGlobalActionOnMain(int action, long timeoutMs) {
+    private boolean runAutomationAction(BooleanSupplier action, long timeoutMs) {
+        long lease = automation.lease();
+        if (lease < 0) {
+            return false;
+        }
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            return performGlobalAction(action);
+            return automation.allows(lease) && action.getAsBoolean();
         }
         AtomicReference<Boolean> accepted = new AtomicReference<>(false);
+        AtomicBoolean pending = new AtomicBoolean(true);
         CountDownLatch done = new CountDownLatch(1);
         mainHandler.post(() -> {
             try {
-                accepted.set(performGlobalAction(action));
+                if (pending.getAndSet(false) && automation.allows(lease)) {
+                    accepted.set(action.getAsBoolean());
+                }
             } finally {
                 done.countDown();
             }
@@ -436,6 +440,8 @@ public final class VagAccessibilityService extends AccessibilityService {
             done.await(Math.max(1, timeoutMs), TimeUnit.MILLISECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
+        } finally {
+            pending.set(false);
         }
         return accepted.get();
     }

@@ -98,19 +98,22 @@ final class AgentRelayClient implements AutoCloseable {
                 Thread.sleep(300);
                 long revision = latestAccessibilityRevision.get();
                 VagAccessibilityService.Snapshot snapshot = service.snapshot(3_000);
-                if ("ok".equals(snapshot.status)) {
+                if ("ok".equals(snapshot.status) || service.isAutomationSuspended()) {
                     JSONObject payload = new JSONObject()
                             .put("agent_version", packageVersion())
                             .put("vw_version", service.packageVersion(
                                     VagAccessibilityService.VOLKSWAGEN_PACKAGE))
                             .put("phone_battery_level", service.batteryLevel())
+                            .put("automation_paused", service.isAutomationSuspended())
                             .put("event_only", true)
-                            .put("revision", revision)
-                            .put(
+                            .put("revision", revision);
+                    if ("ok".equals(snapshot.status) && !service.isAutomationSuspended()) {
+                        payload.put(
                                     "event_snapshot_b64",
                                     Base64.encodeToString(
                                             snapshot.xml.getBytes(StandardCharsets.UTF_8),
                                             Base64.NO_WRAP));
+                    }
                     post(payload);
                     sentRevision = revision;
                 }
@@ -144,14 +147,16 @@ final class AgentRelayClient implements AutoCloseable {
                         .put("vw_version", service.packageVersion(
                                 VagAccessibilityService.VOLKSWAGEN_PACKAGE))
                         .put("phone_battery_level", service.batteryLevel());
+                payload.put("automation_paused", service.isAutomationSuspended());
                 if (pendingResult != null) {
                     payload.put("result", pendingResult);
                 }
+                long lease = service.automationLease();
                 JSONObject response = post(payload);
                 pendingResult = null;
                 JSONObject command = response.optJSONObject("command");
                 if (command != null) {
-                    pendingResult = execute(command);
+                    pendingResult = execute(command, lease);
                 }
             } catch (Exception error) {
                 Log.d(TAG, "Relay retry after " + error.getClass().getSimpleName());
@@ -192,7 +197,7 @@ final class AgentRelayClient implements AutoCloseable {
         }
     }
 
-    private JSONObject execute(JSONObject command) {
+    private JSONObject execute(JSONObject command, long lease) {
         String id = command.optString("id", "");
         String action = command.optString("action", "");
         JSONObject params = command.optJSONObject("params");
@@ -201,6 +206,10 @@ final class AgentRelayClient implements AutoCloseable {
         }
         JSONObject result = putNoThrow(new JSONObject(), "id", id);
         try {
+            if (!"version".equals(action) && !"battery".equals(action)
+                    && !service.allowsAutomation(lease)) {
+                return result.put("status", "automation_paused");
+            }
             switch (action) {
                 case "snapshot":
                     return snapshotResult(result, service.snapshot(3_000));
@@ -274,8 +283,11 @@ final class AgentRelayClient implements AutoCloseable {
         return result;
     }
 
-    private static JSONObject accepted(JSONObject result, boolean accepted)
+    private JSONObject accepted(JSONObject result, boolean accepted)
             throws JSONException {
+        if (!accepted && service.isAutomationSuspended()) {
+            return result.put("status", "automation_paused");
+        }
         return result.put("status", accepted ? "accepted" : "error")
                 .put("error", accepted ? "" : "action rejected");
     }

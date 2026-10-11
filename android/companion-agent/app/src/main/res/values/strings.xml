@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">VAG Companion Agent</string>
+    <string name="automation_switch">VW automation</string>
+    <string name="automation_paused">PAUSED — Volkswagen data collection and remote controls are stopped. You can use OBDeleven or other apps. Phone battery reporting continues. This setting survives a restart.</string>
+    <string name="automation_running">ENABLED — automation will resume after you leave this screen. Turn this switch off before using OBDeleven. Home Assistant keeps the last known car data while paused.</string>
     <string name="service_name">VAG Companion Agent</string>
     <string name="service_description">Reads the visible Volkswagen app accessibility tree for your Home Assistant instance and performs only commands received through its token-protected relay.</string>
     <string name="status_enabled">Accessibility service is enabled and connected.</string>

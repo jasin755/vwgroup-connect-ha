@@ -31,9 +31,16 @@ public final class AgentCommandProvider extends ContentProvider {
         }
 
         result.putBoolean("enabled", true);
+        result.putBoolean("automation_paused", service.isAutomationSuspended());
         result.putLong("revision", service.getRevision());
         result.putString("event_package", service.getEventPackage());
         result.putString("event_class", service.getEventClass());
+
+        if (service.isAutomationSuspended() && !"health".equals(method)
+                && !"provision".equals(method)) {
+            result.putString("status", "automation_paused");
+            return result;
+        }
 
         switch (method == null ? "" : method) {
             case "provision":

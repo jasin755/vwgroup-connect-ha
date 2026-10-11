@@ -14,9 +14,24 @@ Volkswagen accessibility changes are debounced for 300 ms and pushed as
 overview snapshots over the relay. Home Assistant ignores detail/splash trees,
 so only complete overview state produces an event-driven entity update.
 
-While its AccessibilityService is enabled, the agent holds a dim screen wake
+While its AccessibilityService is enabled and automation is not paused, the agent holds a dim screen wake
 lock. This keeps a dedicated companion phone available even when a smart plug
 has disconnected its charger; Android releases the lock when the service stops.
+
+## Pause for OBDeleven or normal phone use
+
+Agent 0.7.0 adds **VW automation** at the top of the existing launcher app.
+Switch it **off** before using OBDeleven. This locally blocks all VW snapshots,
+launches, taps, swipes, Back and wake/sleep commands, including through the LAN
+API or relay. The pause survives service/phone restarts; HA cannot resume it.
+Battery reporting and the relay heartbeat continue so a charging smart plug
+still works. Car data in HA is last-known, not live, while paused.
+
+Opening the Agent control screen temporarily blocks automation too, so HA cannot
+steal the screen while you reach the switch. To resume, turn **VW automation**
+on and leave the control screen. HA resumes on its next normal poll (or use
+Refresh Data). Integration 4.6.5+ treats a pause quietly instead of reporting a
+connection failure. Upgrade both HA and the APK for this behavior.
 
 ## Security model
 

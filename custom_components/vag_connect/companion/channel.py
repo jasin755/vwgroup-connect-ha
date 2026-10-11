@@ -39,7 +39,7 @@ from .screen import (
     read_fields,
     read_selectors,
 )
-from .transport import CompanionTransportError, NetworkAdbTransport
+from .transport import CompanionAutomationPaused, CompanionTransportError, NetworkAdbTransport
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -224,6 +224,12 @@ class CompanionChannel:
         async with self._io_lock:
             try:
                 return await self._read_once()
+            except CompanionAutomationPaused:
+                # Preserve last-known car data without creating a repair/backoff.
+                # Resume with a full detail/GPS read on the next normal poll.
+                self._last_nav_at = None
+                _LOGGER.debug("Companion automation is paused on the phone")
+                return None
             finally:
                 # v2.26.0 (#974) — if the wake/sleep opt-in is on, put the display
                 # back to sleep after every poll that woke it (including a failed or
@@ -243,6 +249,8 @@ class CompanionChannel:
             # under us at any time.
             await self._refresh_version_gate()
             nodes, cleared = await self._dump_and_clear_overlays()
+        except CompanionAutomationPaused:
+            raise
         except CompanionTransportError:
             # v2.26.0 (ckomma #16) — adaptive backoff: double the cooldown per
             # consecutive failure (capped), so a phone that is off / asleep is
@@ -320,6 +328,8 @@ class CompanionChannel:
                         # more (or, worse, skipping every future detail read).
                         fields[key] = val
                         self._nav_cache[key] = val
+            except CompanionAutomationPaused:
+                raise
             except CompanionTransportError:
                 _LOGGER.debug(
                     "companion %s: nav read '%s' hit a transport error; skipping",

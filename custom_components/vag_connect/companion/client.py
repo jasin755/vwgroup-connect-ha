@@ -21,7 +21,7 @@ from typing import Any, Callable
 from ..cariad.models import VehicleData
 from .channel import CompanionChannel, CompanionWriteBlocked
 from .presets import ACTION_TO_COMMAND, PRESETS
-from .transport import NetworkAdbTransport
+from .transport import CompanionTransportError, NetworkAdbTransport
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -132,6 +132,17 @@ class CompanionClient:
         # would self-reinforce the cooldown). On the very first poll (nothing
         # read yet) fall through to a no_data VehicleData.
         if fields is None and self._last_data is not None:
+            # Car automation can be paused while the phone battery heartbeat
+            # continues. Do not overwrite that fresh level with our old car
+            # snapshot on every scheduled poll (smart-plug control uses it).
+            battery_reader = getattr(self._transport, "device_battery_level", None)
+            if callable(battery_reader):
+                try:
+                    level = await battery_reader()
+                except CompanionTransportError:
+                    level = None
+                if type(level) is int and 0 <= level <= 100:
+                    self._last_data.companion_phone_battery_level = level
             return self._last_data
         data = VehicleData(vin=vin.upper())
         data.source_channel = "companion_adb"

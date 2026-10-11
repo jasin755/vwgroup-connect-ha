@@ -15,7 +15,7 @@ import logging
 from typing import Any, cast
 from urllib.parse import urlencode
 
-from .transport import CompanionTransportError, NetworkAdbTransport
+from .transport import CompanionAutomationPaused, CompanionTransportError, NetworkAdbTransport
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,6 +75,8 @@ class AgentHttpTransport(NetworkAdbTransport):
                 timeout=ClientTimeout(total=timeout_s),
             ) as response:
                 body = cast(str, await response.text())
+                if response.status == 409 and body.strip() == "automation_paused":
+                    raise CompanionAutomationPaused()
                 if response.status == 403:
                     raise CompanionTransportError(
                         "the companion agent rejected its token; reinstall or "

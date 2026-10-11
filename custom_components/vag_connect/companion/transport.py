@@ -32,6 +32,16 @@ class CompanionTransportError(RuntimeError):
     """A device-side / connection failure. Carries a human-readable reason."""
 
 
+class CompanionAutomationPaused(CompanionTransportError):
+    """The user intentionally suspended phone automation, not a connection fault."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "VW automation is paused on the phone. Enable VW automation in "
+            "VAG Companion Agent and leave its control screen to resume."
+        )
+
+
 class NetworkAdbTransport:
     """Talks to one phone over TCP ADB. All methods are async and best-effort.
 

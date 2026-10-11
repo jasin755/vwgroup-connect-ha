@@ -18,11 +18,55 @@ from custom_components.vag_connect.companion.relay import (
     _REGISTRY_KEY,
     _broker_by_token,
 )
-from custom_components.vag_connect.companion.transport import CompanionTransportError
+from custom_components.vag_connect.companion.transport import CompanionAutomationPaused, CompanionTransportError
 
 
 _TOKEN = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 _XML = '<?xml version="1.0"?><hierarchy><node text="60%"/></hierarchy>'
+
+
+@pytest.mark.asyncio
+async def test_paused_relay_blocks_ui_but_keeps_battery_reporting() -> None:
+    from unittest.mock import AsyncMock
+    broker = CompanionRelayBroker("entry", _TOKEN)
+    broker.phone_battery_handler = AsyncMock()
+    broker.event_handler = AsyncMock()
+    await broker.handle_poll({
+        "event_only": True, "automation_paused": True, "phone_battery_level": 51,
+        "event_snapshot_b64": base64.b64encode(_XML.encode()).decode(),
+    })
+    assert broker.online
+    broker.phone_battery_handler.assert_awaited_once_with(51)
+    broker.event_handler.assert_not_awaited()
+    transport = AgentRelayTransport(broker)
+    with pytest.raises(CompanionAutomationPaused):
+        await transport.wake()
+    assert broker._commands.empty()
+    assert await transport.device_battery_level() == 51
+    await broker.handle_poll({"event_only": True, "automation_paused": False})
+    assert not broker.automation_paused
+
+
+@pytest.mark.asyncio
+async def test_pause_discards_already_queued_command() -> None:
+    broker = CompanionRelayBroker("entry", _TOKEN)
+    await broker.handle_poll({"event_only": True})
+    transport = AgentRelayTransport(broker)
+    task = asyncio.create_task(transport.tap(10, 20))
+    await asyncio.sleep(0)
+    poll = asyncio.create_task(broker.handle_poll({"automation_paused": True}))
+    try:
+        with pytest.raises(CompanionAutomationPaused):
+            await task
+        assert broker._commands.empty()
+        assert not broker._pending
+    finally:
+        await _cancel(poll)
+
+
+def test_phone_pause_response_is_not_a_generic_relay_failure() -> None:
+    with pytest.raises(CompanionAutomationPaused):
+        AgentRelayTransport._require_ok("snapshot", {"status": "automation_paused"})
 
 
 def test_token_discovery_requires_one_unique_matching_broker() -> None:

@@ -40,6 +40,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.6.5] - 2026-10-11 — local automation pause for OBDeleven
+
+### Added
+- **Agent 0.7.0: VW automation switch.** Pause reading and all remote screen actions directly in VAG Companion Agent. The choice survives restarts, releases the screen wake lock and cannot be overridden remotely. The control screen temporarily suspends automation while visible. Queued actions from before a pause/control-screen visit are rejected rather than replayed on resume.
+- **Keep phone battery reporting.** Relay health and the battery sensor continue while car automation is paused, so smart-plug charging still works. Home Assistant 4.6.5 preserves last-known car data without creating a transport repair/backoff, and rejects car commands with an explanation of the pause. Resume locally and leave the control screen; the next HA poll can read the app again.
+
 ## [4.6.4] - 2026-10-09 — refresh the parking card before reading GPS
 
 ### Fixed

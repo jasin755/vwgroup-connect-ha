@@ -112,7 +112,8 @@ final class AgentHttpServer implements AutoCloseable {
             while (running) {
                 try {
                     Socket client = listener.accept();
-                    clients.execute(() -> handle(client));
+                    long lease = service.automationLease();
+                    clients.execute(() -> handle(client, lease));
                 } catch (SocketException closed) {
                     if (running) {
                         Log.w(TAG, "Agent socket closed unexpectedly", closed);
@@ -130,7 +131,7 @@ final class AgentHttpServer implements AutoCloseable {
         }
     }
 
-    private void handle(Socket socket) {
+    private void handle(Socket socket, long lease) {
         try (Socket client = socket) {
             client.setSoTimeout(SOCKET_TIMEOUT_MS);
             BufferedReader reader = new BufferedReader(new InputStreamReader(
@@ -172,6 +173,12 @@ final class AgentHttpServer implements AutoCloseable {
                 lastNonHealthPath = path;
             }
 
+            if (!service.allowsAutomation(lease) && !"/health".equals(path)
+                    && !"/battery".equals(path) && !"/version".equals(path)) {
+                write(client.getOutputStream(), 409, "automation_paused");
+                return;
+            }
+
             switch (path) {
                 case "/health":
                     write(
@@ -186,6 +193,8 @@ final class AgentHttpServer implements AutoCloseable {
                                     + service.batteryLevel()
                                     + ",\"keep_screen_awake\":"
                                     + service.isScreenWakeLockHeld()
+                                    + ",\"automation_paused\":"
+                                    + service.isAutomationSuspended()
                                     + ",\"requests\":"
                                     + requestCount.get()
                                     + ",\"snapshots\":"
@@ -228,10 +237,7 @@ final class AgentHttpServer implements AutoCloseable {
                         write(client.getOutputStream(), 400, "invalid_coordinates");
                     } else {
                         boolean accepted = service.tap(x, y, 2_000);
-                        write(
-                                client.getOutputStream(),
-                                accepted ? 202 : 409,
-                                accepted ? "accepted" : "gesture_rejected");
+                        writeAction(client.getOutputStream(), accepted, "gesture_rejected");
                     }
                     return;
                 case "/swipe":
@@ -245,31 +251,19 @@ final class AgentHttpServer implements AutoCloseable {
                     } else {
                         boolean accepted = service.swipe(
                                 x1, y1, x2, y2, duration, 2_000);
-                        write(
-                                client.getOutputStream(),
-                                accepted ? 202 : 409,
-                                accepted ? "accepted" : "gesture_rejected");
+                        writeAction(client.getOutputStream(), accepted, "gesture_rejected");
                     }
                     return;
                 case "/back":
                     boolean backAccepted = service.pressBack(2_000);
-                    write(
-                            client.getOutputStream(),
-                            backAccepted ? 202 : 409,
-                            backAccepted ? "accepted" : "action_rejected");
+                    writeAction(client.getOutputStream(), backAccepted, "action_rejected");
                     return;
                 case "/wake":
-                    write(
-                            client.getOutputStream(),
-                            service.wakeScreen() ? 202 : 409,
-                            "accepted");
+                    writeAction(client.getOutputStream(), service.wakeScreen(), "action_rejected");
                     return;
                 case "/sleep":
                     boolean sleepAccepted = service.lockScreen(2_000);
-                    write(
-                            client.getOutputStream(),
-                            sleepAccepted ? 202 : 409,
-                            sleepAccepted ? "accepted" : "action_rejected");
+                    writeAction(client.getOutputStream(), sleepAccepted, "action_rejected");
                     return;
                 case "/foreground":
                     String foregroundPackage = query.getOrDefault(
@@ -287,10 +281,7 @@ final class AgentHttpServer implements AutoCloseable {
                             "package",
                             VagAccessibilityService.VOLKSWAGEN_PACKAGE);
                     boolean launched = service.launchPackage(launchPackage, 2_000);
-                    write(
-                            client.getOutputStream(),
-                            launched ? 202 : 409,
-                            launched ? "accepted" : "launch_rejected");
+                    writeAction(client.getOutputStream(), launched, "launch_rejected");
                     return;
                 case "/version":
                     String versionPackage = query.getOrDefault(
@@ -338,6 +329,12 @@ final class AgentHttpServer implements AutoCloseable {
                     Uri.decode(value));
         }
         return query;
+    }
+
+    private void writeAction(OutputStream output, boolean accepted, String failure)
+            throws IOException {
+        write(output, accepted ? 202 : 409, accepted ? "accepted"
+                : service.isAutomationSuspended() ? "automation_paused" : failure);
     }
 
     private static void writeSnapshot(

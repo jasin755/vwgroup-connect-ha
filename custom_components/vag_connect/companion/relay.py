@@ -21,7 +21,7 @@ from typing import Any, cast
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .transport import CompanionTransportError, NetworkAdbTransport
+from .transport import CompanionAutomationPaused, CompanionTransportError, NetworkAdbTransport
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,6 +44,7 @@ class CompanionRelayBroker:
         self.agent_version: str | None = None
         self.vw_version: str | None = None
         self.phone_battery_level: int | None = None
+        self.automation_paused = False
         self.event_handler: Callable[[str, int], Awaitable[None]] | None = None
         self.phone_battery_handler: Callable[[int], Awaitable[None]] | None = None
 
@@ -69,6 +70,8 @@ class CompanionRelayBroker:
         self.agent_version = str(payload.get("agent_version") or "") or None
         self.vw_version = str(payload.get("vw_version") or "") or None
         self._online_event.set()
+        if isinstance(payload.get("automation_paused"), bool):
+            self.automation_paused = payload["automation_paused"]
 
         raw_battery = payload.get("phone_battery_level")
         if (
@@ -88,7 +91,8 @@ class CompanionRelayBroker:
 
         event_snapshot = payload.get("event_snapshot_b64")
         if payload.get("event_only") is True:
-            if isinstance(event_snapshot, str) and self.event_handler is not None:
+            if (not self.automation_paused and isinstance(event_snapshot, str)
+                    and self.event_handler is not None):
                 try:
                     xml = base64.b64decode(event_snapshot, validate=True).decode("utf-8")
                     await self.event_handler(xml, int(payload.get("revision") or 0))
@@ -117,6 +121,9 @@ class CompanionRelayBroker:
             command_id = str(command.get("id") or "")
             future = self._pending.get(command_id)
             if future is not None and not future.done():
+                if self.automation_paused and command.get("action") not in {"battery", "version"}:
+                    future.set_result({"id": command_id, "status": "automation_paused"})
+                    continue
                 return command
             # The HA caller timed out/cancelled before the phone collected this
             # command. Discard it so a stale climate/charging action never runs.
@@ -129,6 +136,8 @@ class CompanionRelayBroker:
         **params: object,
     ) -> dict[str, Any]:
         await self.wait_online(min(timeout_s, 5.0))
+        if self.automation_paused and action not in {"battery", "version"}:
+            raise CompanionAutomationPaused()
         command_id = uuid.uuid4().hex
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
@@ -289,6 +298,8 @@ class AgentRelayTransport(NetworkAdbTransport):
     @staticmethod
     def _require_ok(action: str, result: dict[str, Any]) -> dict[str, Any]:
         status = str(result.get("status") or "")
+        if status == "automation_paused":
+            raise CompanionAutomationPaused()
         if status not in {"ok", "accepted"}:
             raise CompanionTransportError(
                 f"companion relay action '{action}' failed: "

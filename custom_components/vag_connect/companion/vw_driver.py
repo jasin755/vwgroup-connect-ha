@@ -10,7 +10,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .screen import UiNode, parse_ui_dump
-from .transport import CompanionTransportError, NetworkAdbTransport
+from .transport import CompanionAutomationPaused, CompanionTransportError, NetworkAdbTransport
 from .vw_screen import (
     charge_limit_gesture,
     find_by_desc,
@@ -93,6 +93,8 @@ class VolkswagenAppDriver:
                     last_signature = signature
                 else:
                     last_signature = None
+            except CompanionAutomationPaused:
+                raise
             except CompanionTransportError as err:
                 last_error = err
             await asyncio.sleep(0.15)
@@ -368,6 +370,8 @@ class VolkswagenAppDriver:
         for route in routes:
             try:
                 out.update(await route())
+            except CompanionAutomationPaused:
+                raise
             except CompanionTransportError as error:
                 # One redesigned screen must not discard values from the other
                 # three; the channel's overview read remains authoritative.
