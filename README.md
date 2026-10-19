@@ -127,8 +127,12 @@ card's Share action. Recentering alone does not refresh the shared location.
 
 The centre is a candidate, not proof of a marker: before sharing, the resulting
 card must match the overview vehicle name and contain parking information and
-Share in the same card. Missing/ambiguous panel geometry or a wrong POI stops GPS
-reading and preserves the last-known location. This flow has been exercised with
+Share in the same card. From 4.6.6, any details card already open on the map,
+including a charger POI, is closed first; if the centre selects a POI (for example
+while the camera is still moving from the previous parking place), that card is
+closed and Find vehicle is retried up to three times. Missing/ambiguous panel
+geometry or a persistent wrong POI stops GPS reading and preserves the last-known
+location. This flow has been exercised with
 a closed card and a panned/recentred map on the Pixel; other physical devices
 still need validation. The integration logs which optional screen could not be read.
 

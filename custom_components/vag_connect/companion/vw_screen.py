@@ -138,6 +138,25 @@ def centered_vehicle_marker_point(nodes: list[UiNode]) -> tuple[int, int] | None
     return x, y
 
 
+def map_details_close(nodes: list[UiNode]) -> UiNode | None:
+    """Return Close for whichever details card is open in the map's bottom sheet.
+
+    Closing is harmless for both vehicle and POI cards. A wrong POI card (e.g.
+    a charger at the car's previous parking place, selected while the camera
+    was still animating) must be closable, otherwise it blocks every later GPS
+    read. Still require the map screen and Close at or below the sheet handle.
+    """
+    close = find_by_desc(nodes, r"^Close details view$")
+    map_node = find_by_desc(nodes, r"^Google Map$")
+    sheet = find_by_desc(nodes, r"^Bottom sheet (?:collapsed|expanded)$")
+    if (close is None or close.bounds is None or map_node is None
+            or find_by_desc(nodes, r"^Find vehicle$") is None
+            or sheet is None or sheet.bounds is None
+            or close.bounds[1] < sheet.bounds[1]):
+        return None
+    return close
+
+
 def vehicle_map_share(nodes: list[UiNode], expected_name: str) -> UiNode | None:
     """Accept Share only inside this car's parking card, never a POI card.
 

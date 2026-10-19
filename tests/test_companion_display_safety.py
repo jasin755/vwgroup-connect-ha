@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.vag_connect.companion.screen import parse_ui_dump
 from custom_components.vag_connect.companion.transport import CompanionTransportError
+from custom_components.vag_connect.companion import vw_driver
 from custom_components.vag_connect.companion.vw_driver import VolkswagenAppDriver
 from custom_components.vag_connect.companion.vw_screen import (
     charge_limit_gesture,
@@ -15,6 +16,7 @@ from custom_components.vag_connect.companion.vw_screen import (
     find_by_rid,
     find_by_text,
     centered_vehicle_marker_point,
+    map_details_close,
     overview_vehicle_name,
     row_toggle,
     vertical_scroll_gesture,
@@ -224,8 +226,11 @@ class _MapTransport:
     def __init__(
         self, *, card_open: bool = False, card_name: str = "ID.3 Pro Performance",
         sheet: bool = True, close_works: bool = True, accessible_marker: bool = False,
+        marker_cards: list[str] | None = None,
     ) -> None:
         self.page = "overview"
+        # Card opened by each successive marker tap; the last one repeats.
+        self.marker_cards = list(marker_cards or [card_name])
         self.card_open = card_open
         self.card_name = card_name
         self.sheet = sheet
@@ -256,6 +261,9 @@ class _MapTransport:
         elif (x, y) == (360, 400):
             self.card_open = True
             self.fresh_card = True
+            self.card_name = (
+                self.marker_cards.pop(0) if len(self.marker_cards) > 1 else self.marker_cards[0]
+            )
 
 
 @pytest.mark.parametrize("card_open", [True, False])
@@ -278,7 +286,7 @@ async def test_failed_card_close_never_shares_stale_location() -> None:
     transport = _MapTransport(card_open=True, close_works=False)
     driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
     driver.ensure_overview = AsyncMock(return_value=parse_ui_dump(map_overview()))
-    with pytest.raises(CompanionTransportError, match="old vehicle parking card to close"):
+    with pytest.raises(CompanionTransportError, match="map details card to close"):
         await driver._read_location()
     assert transport.taps == [(325, 1195), (650, 865)]
 
@@ -330,14 +338,55 @@ async def test_mostly_clipped_close_is_not_tapped() -> None:
     transport.tap.assert_not_awaited()
 
 
+@pytest.fixture
+def fast_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(vw_driver, "_CAMERA_SETTLE_S", 0)
+    monkeypatch.setattr(vw_driver, "_CARD_TIMEOUT_S", 0.3)
+
+
 @pytest.mark.parametrize("card_open", [True, False])
-async def test_wrong_map_card_never_shares_coordinates(card_open: bool) -> None:
+async def test_wrong_map_card_never_shares_coordinates(card_open: bool, fast_map: None) -> None:
     transport = _MapTransport(card_open=card_open, card_name="Nearby charging station")
     driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
     driver.ensure_overview = AsyncMock(return_value=parse_ui_dump(map_overview()))
-    with pytest.raises(CompanionTransportError):
+    with pytest.raises(CompanionTransportError, match="fresh matching vehicle parking card"):
         await driver._read_location()
     assert (250, 1020) not in transport.taps
+    assert transport.taps.count((360, 400)) == vw_driver._MARKER_ATTEMPTS
+    # The POI card is closed again so it cannot hide the marker next time.
+    assert not transport.card_open
+
+
+async def test_poi_card_left_open_on_map_is_closed_before_reading(fast_map: None) -> None:
+    """A charger card from an earlier read must not block every later GPS read."""
+    transport = _MapTransport(
+        card_open=True, card_name="PRE Ultra-highspeed charger",
+        marker_cards=["ID.3 Pro Performance"],
+    )
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    driver.ensure_overview = AsyncMock(return_value=parse_ui_dump(map_overview()))
+    assert await driver._read_location() == {"latitude": 50.1, "longitude": 14.2}
+    assert transport.taps == [(325, 1195), (650, 865), (630, 630), (360, 400), (250, 1020)]
+
+
+async def test_marker_tap_during_camera_animation_retries_find_vehicle(fast_map: None) -> None:
+    """Find vehicle from the old parking place may first select the old POI."""
+    transport = _MapTransport(marker_cards=["PRE Ultra-highspeed charger", "ID.3 Pro Performance"])
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+    driver.ensure_overview = AsyncMock(return_value=parse_ui_dump(map_overview()))
+    assert await driver._read_location() == {"latitude": 50.1, "longitude": 14.2}
+    assert transport.taps == [
+        (325, 1195), (630, 630), (360, 400),  # map, Find, POI selected
+        (650, 865), (630, 630), (360, 400),  # close POI, Find again, vehicle
+        (250, 1020),  # Share only from the verified vehicle card
+    ]
+
+
+def test_map_card_close_requires_map_sheet() -> None:
+    assert map_details_close(parse_ui_dump(map_page(map_card("Charger")))) is not None
+    assert map_details_close(parse_ui_dump(map_page(map_card("Charger"), sheet=False))) is None
+    detached = window(node(**{"content-desc": "Close details view", "bounds": "[620,830][680,890]"}), 720, 1280)
+    assert map_details_close(parse_ui_dump(detached)) is None
 
 
 def test_matching_name_without_parking_evidence_is_insufficient() -> None:

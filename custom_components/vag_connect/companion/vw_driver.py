@@ -17,6 +17,7 @@ from .vw_screen import (
     find_by_rid,
     find_by_text,
     centered_vehicle_marker_point,
+    map_details_close,
     overview_vehicle_name,
     parse_climate,
     parse_climate_settings,
@@ -31,6 +32,11 @@ from .vw_screen import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Find vehicle -> centre tap attempts, and the base wait for the map camera.
+_MARKER_ATTEMPTS = 3
+_CAMERA_SETTLE_S = 0.75
+_CARD_TIMEOUT_S = 4.0
 
 
 class VolkswagenAppDriver:
@@ -305,6 +311,21 @@ class VolkswagenAppDriver:
             if opened:
                 await self.ensure_overview()
 
+    async def _close_map_card(self, nodes: list[UiNode]) -> list[UiNode]:
+        """Close an open map details card (vehicle or POI); no-op when none."""
+        if find_by_desc(nodes, r"^Close details view$") is None:
+            return nodes
+        await self._tap(
+            map_details_close(nodes), reason="map details card Close", allow_clipped=True,
+            validate_screen=lambda current: map_details_close(current) is not None,
+        )
+        return await self._wait_for_nodes(
+            lambda current: find_by_desc(current, r"^Find vehicle$") is not None
+            and find_by_desc(current, r"^Close details view$") is None
+            and find_by_text(current, r"^Share$") is None,
+            reason="map details card to close",
+        )
+
     async def _read_location(self) -> dict[str, object]:
         nodes = await self.ensure_overview()
         vehicle_name = overview_vehicle_name(nodes)
@@ -315,37 +336,54 @@ class VolkswagenAppDriver:
             lambda current: find_by_desc(current, r"^Find vehicle$") is not None,
             reason="vehicle map",
         )
-        # VW can update an open card's address while its Share action retains
-        # the previous parking coordinates. Find vehicle alone does not refresh
-        # that action: close the old card and select the centred marker afresh.
-        close = find_by_desc(map_nodes, r"^Close details view$")
-        if close is not None:
-            await self._tap(
-                close, reason="vehicle parking card Close", allow_clipped=True,
-                validate_screen=lambda current: vehicle_map_share(current, vehicle_name) is not None,
-            )
+        vehicle_card: list[UiNode] | None = None
+        wrong_card: CompanionTransportError | None = None
+        for attempt in range(_MARKER_ATTEMPTS):
+            # VW can update an open card's address while its Share action
+            # retains the previous parking coordinates, and a POI card selected
+            # by a previous attempt hides the marker. Always start from a map
+            # without any details card and select the centred marker afresh.
+            map_nodes = await self._close_map_card(map_nodes)
+            await self._tap_desc(map_nodes, r"^Find vehicle$")
+            # Map camera animation is not represented in accessibility node
+            # bounds. After the car moved far away, the camera may still show
+            # the old parking place (often a charger POI) when the first wait
+            # elapses, so later attempts wait longer.
+            await asyncio.sleep(_CAMERA_SETTLE_S * (attempt + 1))
             map_nodes = await self._wait_for_nodes(
-                lambda current: find_by_desc(current, r"^Find vehicle$") is not None
-                and find_by_desc(current, r"^Close details view$") is None
-                and find_by_text(current, r"^Share$") is None,
-                reason="old vehicle parking card to close",
+                lambda current: centered_vehicle_marker_point(current) is not None,
+                reason="centred vehicle map (viewport/card cannot be verified)",
             )
-        await self._tap_desc(map_nodes, r"^Find vehicle$")
-        # Map camera animation is not represented in accessibility node bounds.
-        # Allow it to finish before trying the geometric centre candidate.
-        await asyncio.sleep(0.75)
-        map_nodes = await self._wait_for_nodes(
-            lambda current: centered_vehicle_marker_point(current) is not None,
-            reason="centred vehicle map (viewport/card cannot be verified)",
-        )
-        marker = centered_vehicle_marker_point(map_nodes)
-        if marker is None or centered_vehicle_marker_point(await self._nodes()) != marker:
-            raise CompanionTransportError("Volkswagen app: map layout changed; no marker tap sent")
-        await self._t.tap(*marker)
-        vehicle_card = await self._wait_for_nodes(
-            lambda current: vehicle_map_share(current, vehicle_name) is not None,
-            reason="fresh matching vehicle parking card (name, Parked since, Share)",
-        )
+            marker = centered_vehicle_marker_point(map_nodes)
+            if marker is None or centered_vehicle_marker_point(await self._nodes()) != marker:
+                raise CompanionTransportError("Volkswagen app: map layout changed; no marker tap sent")
+            await self._t.tap(*marker)
+            try:
+                vehicle_card = await self._wait_for_nodes(
+                    lambda current: vehicle_map_share(current, vehicle_name) is not None,
+                    reason="fresh matching vehicle parking card (name, Parked since, Share)",
+                    timeout_s=_CARD_TIMEOUT_S,
+                )
+                break
+            except CompanionAutomationPaused:
+                raise
+            except CompanionTransportError as error:
+                wrong_card = error
+                _LOGGER.debug(
+                    "Volkswagen map centre did not select the vehicle (attempt %d/%d)",
+                    attempt + 1, _MARKER_ATTEMPTS,
+                )
+                map_nodes = await self._nodes()
+        if vehicle_card is None:
+            try:
+                # Do not leave a POI card that would hide the marker next time.
+                await self._close_map_card(await self._nodes())
+            except CompanionAutomationPaused:
+                raise
+            except CompanionTransportError:
+                pass
+            assert wrong_card is not None
+            raise wrong_card
         await self._tap(
             vehicle_map_share(vehicle_card, vehicle_name), reason="verified vehicle Share",
             validate_screen=lambda current: vehicle_map_share(current, vehicle_name) is not None,

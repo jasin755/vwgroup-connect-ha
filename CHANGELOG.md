@@ -40,6 +40,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 > — mit jeder geänderten Datei, jeder Zeile, jeder Issue-Referenz und der
 > Methodik dahinter.
 
+## [4.6.6] - 2026-10-19 — close POI cards that blocked GPS reads
+
+### Fixed
+- **Car stuck as away after parking at a charger.** When the vehicle moved far from its previous parking place, the centre tap after Find vehicle could land while the map camera was still at the old place and open that place's charger POI card. That card was correctly rejected, but it stayed open, and the old guard only closed verified vehicle cards. Every later GPS read then stopped before Find vehicle and Home Assistant kept the old coordinates, so the car showed as away while parked at home.
+- **Any map details card is now closed first**, vehicle or POI, provided Close sits in the map's bottom sheet on the map screen. If the centre selects something other than the overview vehicle, the card is closed and Find vehicle is retried with a longer camera wait (3 attempts). A failed read closes the wrong card again. Share is still sent only from the verified vehicle card. No Android Agent update is required.
+
 ## [4.6.5] - 2026-10-11 — local automation pause for OBDeleven
 
 ### Added
