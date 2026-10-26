@@ -9,6 +9,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Path;
 import android.os.BatteryManager;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -237,6 +238,10 @@ public final class VagAccessibilityService extends AccessibilityService {
                 () -> swipeOnMainThread(x1, y1, x2, y2, durationMs), timeoutMs);
     }
 
+    boolean setText(String text, long timeoutMs) {
+        return runAutomationAction(() -> setTextOnMainThread(text), timeoutMs);
+    }
+
     boolean pressBack(long timeoutMs) {
         return runAutomationAction(() -> performGlobalAction(GLOBAL_ACTION_BACK), timeoutMs);
     }
@@ -394,6 +399,67 @@ public final class VagAccessibilityService extends AccessibilityService {
                 .addStroke(stroke)
                 .build();
         return dispatchGesture(gesture, null, null);
+    }
+
+    // Replaces the text of the input field that currently has focus in the
+    // active window. Some Compose fields never report input focus, so a window
+    // with exactly one editable field uses that one. Nothing is typed when the
+    // target is missing or ambiguous.
+    private boolean setTextOnMainThread(String text) {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) {
+            return false;
+        }
+        AccessibilityNodeInfo target = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        try {
+            if (target == null || !target.isEditable()) {
+                if (target != null) {
+                    target.recycle();
+                }
+                target = singleEditable(root);
+            }
+            if (target == null) {
+                return false;
+            }
+            Bundle arguments = new Bundle();
+            arguments.putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
+            return target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments);
+        } finally {
+            if (target != null) {
+                target.recycle();
+            }
+            root.recycle();
+        }
+    }
+
+    private static AccessibilityNodeInfo singleEditable(AccessibilityNodeInfo root) {
+        java.util.ArrayDeque<AccessibilityNodeInfo> pending = new java.util.ArrayDeque<>();
+        AccessibilityNodeInfo found = null;
+        boolean ambiguous = false;
+        pending.add(AccessibilityNodeInfo.obtain(root));
+        while (!pending.isEmpty()) {
+            AccessibilityNodeInfo node = pending.poll();
+            if (node.isEditable() && node.isVisibleToUser()) {
+                if (found == null) {
+                    found = AccessibilityNodeInfo.obtain(node);
+                } else {
+                    ambiguous = true;
+                }
+            }
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) {
+                    pending.add(child);
+                }
+            }
+            node.recycle();
+        }
+        if (ambiguous && found != null) {
+            found.recycle();
+            return null;
+        }
+        return found;
     }
 
     private boolean swipeOnMainThread(

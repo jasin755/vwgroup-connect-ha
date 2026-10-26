@@ -226,6 +226,9 @@ final class AgentRelayClient implements AutoCloseable {
                             params.optInt("y2", -1),
                             params.optLong("duration", 300),
                             3_000));
+                case "set_text":
+                    return accepted(result, service.setText(
+                            params.optString("text", ""), 3_000));
                 case "back":
                     return accepted(result, service.pressBack(3_000));
                 case "wake":

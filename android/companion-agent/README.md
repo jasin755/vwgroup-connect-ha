@@ -116,6 +116,8 @@ Action endpoints accept `POST`:
 - `/launch?package=...`
 - `/tap?x=...&y=...`
 - `/swipe?x1=...&y1=...&x2=...&y2=...&duration=...`
+- `/set-text?text=...` — replaces the text of the focused input field in the
+  active window (tap the field first)
 - `/back`
 - `/wake`
 - `/sleep`

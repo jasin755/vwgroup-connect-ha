@@ -2664,6 +2664,38 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             )
             return None
 
+    def _poll_reset_event(self) -> asyncio.Event:
+        """Lazily created so tests that bypass ``__init__`` still work."""
+        event = getattr(self, "_poll_reset", None)
+        if event is None:
+            event = self._poll_reset = asyncio.Event()
+        return event
+
+    def _restart_poll_interval(self) -> None:
+        """A manual/command refresh just fetched fresh data: the next background
+        poll is due a full interval from now, not at the old tick."""
+        self._poll_reset_event().set()
+
+    async def _sleep_until_next_poll(self, interval_s: float) -> None:
+        """Sleep ``interval_s``, restarting the wait whenever a refresh ran."""
+        event = self._poll_reset_event()
+        while True:
+            event.clear()
+            # asyncio.sleep (not wait_for) so tests that step the loop by
+            # patching asyncio.sleep keep working.
+            sleeper = asyncio.ensure_future(asyncio.sleep(interval_s))
+            reset = asyncio.ensure_future(event.wait())
+            try:
+                await asyncio.wait({sleeper, reset}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in (sleeper, reset):
+                    task.cancel()
+            if sleeper.done() and not sleeper.cancelled():
+                return
+            if not self._started:
+                return
+            _LOGGER.debug("Refresh ran — next poll rescheduled in %ds", interval_s)
+
     async def _poll_loop(self) -> None:
         """Background polling loop — runs independently of HA scheduler.
 
@@ -2690,7 +2722,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             if hour >= 22 or hour < 5:
                 interval_s = interval_s * 2
                 _LOGGER.debug("Nightly reduction active — interval doubled to %ds", interval_s)
-            await asyncio.sleep(interval_s)
+            await self._sleep_until_next_poll(interval_s)
             if not self._started:
                 break
             # v2.8.0 — pre-flight watchdog. If we are on the
@@ -5314,6 +5346,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 *[client.get_status(vin) for vin in vins],
                 return_exceptions=True,
             )
+            self._restart_poll_interval()
             # v2.18.0 (A1) — same shape as the setup fetch: merge + enrich
             # outside the lock, assign inside.
             #

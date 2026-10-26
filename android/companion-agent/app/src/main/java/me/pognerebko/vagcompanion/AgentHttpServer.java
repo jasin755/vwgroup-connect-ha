@@ -254,6 +254,15 @@ final class AgentHttpServer implements AutoCloseable {
                         writeAction(client.getOutputStream(), accepted, "gesture_rejected");
                     }
                     return;
+                case "/set-text":
+                    String text = query.get("text");
+                    if (text == null) {
+                        write(client.getOutputStream(), 400, "missing_text");
+                    } else {
+                        boolean accepted = service.setText(text, 2_000);
+                        writeAction(client.getOutputStream(), accepted, "no_focused_input");
+                    }
+                    return;
                 case "/back":
                     boolean backAccepted = service.pressBack(2_000);
                     writeAction(client.getOutputStream(), backAccepted, "action_rejected");

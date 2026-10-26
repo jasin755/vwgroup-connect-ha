@@ -6,6 +6,11 @@
 
     <queries>
         <package android:name="com.volkswagen.weconnect" />
+        <!-- /launch?package=... may start any launchable app HA asks for. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application
