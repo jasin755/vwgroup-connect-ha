@@ -44,6 +44,7 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ### Changed
 - **A refresh restarts the poll interval.** After a manual refresh (or the refresh that follows a command) the next background poll is due a full interval later instead of at the old tick, so a refresh just before the scheduled poll no longer causes a second read a minute later.
+- **A manual refresh also re-reads the companion detail screens and GPS.** The Refresh button and the `refresh_vehicle` / `refresh_cloud_cache` services now make the 15-min detail/GPS read due immediately and restart its cadence from that read. Before, a manual refresh re-read only the app overview, so the parking position could stay up to 15–20 min old (for example still "home" after parking elsewhere). Background polls keep the 15-min cadence. No Android Agent update is required.
 
 ### Added
 - **Agent 0.8.0: generic text input and app launch.** `/set-text?text=…` (relay action `set_text`) replaces the text of the focused input field in the active window, falling back to the only editable field when a Compose field reports no input focus. `/launch?package=…` can now start any launchable app (Android 11+ package visibility). Nothing in the Agent is specific to another app; the Volkswagen behaviour is unchanged.

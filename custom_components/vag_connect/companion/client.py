@@ -328,5 +328,9 @@ class CompanionClient:
         """Clear a stuck failure/rate-limit backoff (user-initiated retry)."""
         self._channel.reset_cooldown()
 
+    def request_nav_read(self) -> None:
+        """Re-read detail screens and GPS on the next poll (manual refresh)."""
+        self._channel.request_nav_read()
+
     async def close(self) -> None:
         await self._transport.close()

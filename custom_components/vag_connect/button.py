@@ -97,7 +97,7 @@ class VagRefreshButton(VagConnectEntity, ButtonEntity):
         super().__init__(coordinator, vin, "refresh_button")
 
     async def async_press(self) -> None:
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_manual_refresh()
 
 
 class VagWakeButton(VagConnectEntity, ButtonEntity):

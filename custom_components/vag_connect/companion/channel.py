@@ -196,6 +196,15 @@ class CompanionChannel:
         self._nav_cache.clear()
         _LOGGER.debug("companion %s: backoff reset by request", self._preset.brand)
 
+    def request_nav_read(self) -> None:
+        """Make the next read include the detail/GPS navigation (manual refresh).
+
+        Nav reads are throttled to one per ``_NAV_READ_INTERVAL_S``. A user who
+        presses Refresh wants current values, the parking position included,
+        so the next read navigates now and the cadence window restarts from it.
+        """
+        self._last_nav_at = None
+
     # -- read -----------------------------------------------------------------
 
     def _in_cooldown(self) -> bool:

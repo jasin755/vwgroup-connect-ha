@@ -6273,6 +6273,20 @@ class VagConnectCoordinator(DataUpdateCoordinator):
 
         return bool(self.entry.data.get(CONF_STRATEGY) == STRATEGY_COMPANION_ADB)
 
+    async def async_manual_refresh(self) -> None:
+        """User-initiated refresh (button / ``refresh_vehicle`` service).
+
+        A plain poll re-reads the companion overview only; the detail screens
+        and the parking position wait for their 15-min cadence. A manual
+        refresh should return current values, so it makes that read due now
+        (the cadence restarts from it) before polling.
+        """
+        client = getattr(self, "_cariad_client", None)
+        request = getattr(client, "request_nav_read", None)
+        if callable(request):
+            request()
+        await self.async_request_refresh()
+
     async def async_reset_companion_cooldown(self) -> None:
         """v2.26.0 (ckomma #22) — user-initiated clear of a stuck companion
         failure/rate-limit backoff, then an immediate re-read.

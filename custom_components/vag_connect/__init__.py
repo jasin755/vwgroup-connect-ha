@@ -616,7 +616,7 @@ def _register_services(hass: HomeAssistant) -> None:
         """
         for entry in hass.config_entries.async_entries(DOMAIN):
             if hasattr(entry, "runtime_data"):
-                await entry.runtime_data.async_request_refresh()
+                await entry.runtime_data.async_manual_refresh()
 
     async def _handle_refresh_cloud_cache(_call: ServiceCall) -> None:
         """v1.13.0 (#63 Phase 3) — semantic alias for ``refresh_vehicle``.

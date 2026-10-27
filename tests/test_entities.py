@@ -415,9 +415,10 @@ class TestButton:
         from custom_components.vag_connect.button import VagRefreshButton
         coord = _make_coordinator()
         vin = list(coord.data.keys())[0]
+        coord.async_manual_refresh = AsyncMock()
         b = VagRefreshButton(coord, vin)
         asyncio.run(b.async_press())
-        coord.async_request_refresh.assert_called_once()
+        coord.async_manual_refresh.assert_awaited_once()
 
     def test_wake_button_press(self):
         import asyncio
