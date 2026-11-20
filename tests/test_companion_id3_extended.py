@@ -19,6 +19,7 @@ from custom_components.vag_connect.companion.screen import (
 )
 from custom_components.vag_connect.companion.vw_screen import (
     charge_limit_gesture,
+    find_by_rid,
     parse_climate,
     parse_climate_settings,
     parse_shared_location,
@@ -46,10 +47,11 @@ def _node(
     checkable: bool = False,
     checked: bool = False,
     clazz: str = "android.view.View",
+    package: str = "",
 ) -> str:
     return (
         f'<node resource-id="{rid}" text="{text}" content-desc="{desc}" '
-        f'class="{clazz}" bounds="{bounds}" '
+        f'class="{clazz}" package="{package}" bounds="{bounds}" '
         f'clickable="{str(clickable).lower()}" '
         f'checkable="{str(checkable).lower()}" '
         f'checked="{str(checked).lower()}" enabled="true" />'
@@ -595,8 +597,15 @@ class _ChargeSettingsTransport(_DriverTransport):
     def _settings(self) -> str:
         if self.notice:
             return _dump(
-                _node(text="You have increased the target charge level"),
-                _node(text="Got it", clickable=True, bounds="[100,2000][980,2150]"),
+                # Real We Connect tree (captured 2026-11-20): the Compose
+                # button exposes "Got it" only as content-desc on a child of
+                # the clickable View, never as text.
+                _node(text="You have increased the target charge level",
+                      desc="You have increased the target charge level",
+                      bounds="[47,1667][947,1726]"),
+                _node(clickable=True, bounds="[94,2097][986,2209]"),
+                _node(desc="Got it", bounds="[94,2097][986,2209]"),
+                _node(clazz="android.widget.Button", bounds="[94,2097][986,2209]"),
             )
         thumb_x = round(107 + 739 * (self.target_soc - 50) / 50)
         return _dump(
@@ -935,3 +944,159 @@ async def test_final_overview_race_keeps_initial_poll_instead_of_raising() -> No
         "doors_locked": True,
         "target_soc": 60,
     }
+
+
+def _play_update_sheet(*, identified: bool = True) -> str:
+    """Google Play in-app update sheet over We Connect (captured 2026-11-20)."""
+    play = "com.android.vending"
+    return _dump(
+        _node(package=play, bounds="[0,0][1080,2284]"),
+        _node(package=play, desc="Google Play", bounds="[132,1515][315,1572]"),
+        _node(package=play, desc="Dismiss update dialog", clickable=True,
+              bounds="[954,1472][1080,1598]"),
+        _node(package=play, desc="Update available\n" if identified else "Something else",
+              bounds="[56,1598][1080,1725]"),
+        _node(package=play, text="Learn more", clickable=True,
+              clazz="android.widget.Button", bounds="[56,2162][526,2256]"),
+        _node(package=play, text="Update", clickable=True,
+              clazz="android.widget.Button", bounds="[554,2162][1024,2256]"),
+    )
+
+
+class _PlayUpdateTransport(_DriverTransport):
+    """The VW-only snapshot is empty while Play's sheet owns the active window."""
+
+    def __init__(self, *, identified: bool = True) -> None:
+        super().__init__()
+        self.sheet = True
+        self.identified = identified
+        self.foreground_calls = 0
+
+    async def is_foreground(self, package: str) -> bool:  # noqa: ARG002
+        return not self.sheet
+
+    async def foreground_app(self, package: str) -> None:  # noqa: ARG002
+        # Relaunching does not remove Play's sheet; it must be closed first.
+        if self.sheet:
+            self.foreground_calls += 1
+
+    async def dump_ui(self) -> str:
+        if self.sheet:
+            raise CompanionTransportError("companion agent /snapshot: no_volkswagen_window")
+        return await super().dump_ui()
+
+    async def dump_active_ui(self) -> str:
+        if self.sheet:
+            return _play_update_sheet(identified=self.identified)
+        return await super().dump_ui()
+
+    async def tap(self, x: int, y: int) -> None:
+        if self.sheet:
+            self.taps.append((x, y))
+            assert y < 2100, "the Update / Learn more buttons must never be tapped"
+            if 954 <= x <= 1080 and 1472 <= y <= 1598:
+                self.sheet = False
+            return
+        await super().tap(x, y)
+
+
+async def test_overview_closes_google_play_update_sheet() -> None:
+    transport = _PlayUpdateTransport()
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+
+    nodes = await driver.ensure_overview()
+
+    assert find_by_rid(nodes, "rangeTile") is not None
+    assert transport.taps == [(1017, 1535)]
+    assert transport.foreground_calls == 0
+
+
+async def test_unidentified_play_window_is_never_tapped() -> None:
+    transport = _PlayUpdateTransport(identified=False)
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+
+    with pytest.raises(CompanionTransportError):
+        await driver.ensure_overview()
+
+    assert transport.taps == []
+
+
+async def test_charge_limit_above_80_acknowledges_compose_got_it() -> None:
+    transport = _ChargeSettingsTransport()
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+
+    await driver.set_target_soc(100)
+
+    assert transport.saved_target == 100
+    assert transport.acknowledgements == 1
+
+
+class _RangeSheetTransport(_DriverTransport):
+    """Range/charging sheet whose X is a content-desc "Close" (captured 2026-11-20)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.screen = "range"
+
+    async def dump_ui(self) -> str:
+        if self.screen == "range":
+            return _dump(
+                _node(desc="Close sheet", clickable=True, bounds="[0,0][1080,1197]"),
+                _node(clickable=True, bounds="[19,1216][131,1328]"),
+                _node(desc="Close", bounds="[47,1244][103,1300]"),
+                _node(desc="Stop charging. Target charge level reached. Currently not charging.",
+                      bounds="[94,2098][986,2210]"),
+            )
+        return await super().dump_ui()
+
+    async def tap(self, x: int, y: int) -> None:
+        if self.screen == "range":
+            self.taps.append((x, y))
+            assert (x, y) == (75, 1272), "only the sheet's own X may be tapped"
+            self.screen = "overview"
+            return
+        await super().tap(x, y)
+
+
+async def test_overview_closes_range_sheet_via_close_description() -> None:
+    transport = _RangeSheetTransport()
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+
+    nodes = await driver.ensure_overview()
+
+    assert find_by_rid(nodes, "rangeTile") is not None
+    assert transport.taps == [(75, 1272)]
+
+
+class _SyncAfterSaveTransport(_ChargeSettingsTransport):
+    """After Save the header spins ("Currently synchronising") and settings lag."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sync_polls = 0
+
+    def _overview(self) -> str:
+        base = super()._overview()
+        if self.sync_polls > 0:
+            self.sync_polls -= 1
+            return base.replace(
+                "</hierarchy>",
+                _node(desc="Your vehicle: ID.3. Currently synchronising") + "</hierarchy>",
+            )
+        return base
+
+    async def tap(self, x: int, y: int) -> None:
+        saving = self.screen == "settings" and x > 900 and y < 250
+        await super().tap(x, y)
+        if saving:
+            self.sync_polls = 3
+
+
+async def test_charge_limit_verification_waits_for_vehicle_sync() -> None:
+    transport = _SyncAfterSaveTransport()
+    driver = VolkswagenAppDriver(transport, settle_s=0)  # type: ignore[arg-type]
+
+    await driver.set_target_soc(90)
+
+    assert transport.saved_target == 90
+    assert transport.sync_polls == 0

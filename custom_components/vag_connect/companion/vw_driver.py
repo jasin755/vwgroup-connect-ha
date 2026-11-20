@@ -14,6 +14,7 @@ from .transport import CompanionAutomationPaused, CompanionTransportError, Netwo
 from .vw_screen import (
     charge_limit_gesture,
     find_by_desc,
+    find_by_label,
     find_by_rid,
     find_by_text,
     centered_vehicle_marker_point,
@@ -37,6 +38,13 @@ _LOGGER = logging.getLogger(__name__)
 _MARKER_ATTEMPTS = 3
 _CAMERA_SETTLE_S = 0.75
 _CARD_TIMEOUT_S = 4.0
+
+_VW_PACKAGE = "com.volkswagen.weconnect"
+# Google Play's in-app update sheet is drawn in a Play-owned window on top of
+# the VW app. While it is up the VW-only snapshot is empty and relaunching the
+# app does not remove it, so every route failed with "could not return to
+# overview" until someone closed it by hand.
+_PLAY_PACKAGE = "com.android.vending"
 
 
 class VolkswagenAppDriver:
@@ -113,6 +121,8 @@ class VolkswagenAppDriver:
         self, node: UiNode | None, *, reason: str,
         validate_screen: Callable[[list[UiNode]], bool] | None = None,
         allow_clipped: bool = False,
+        packages: frozenset[str] = frozenset({"", _VW_PACKAGE}),
+        active_window: bool = False,
     ) -> None:
         if (node is None or node.tap_point is None
                 or (node.visible_bounds != node.bounds and not allow_clipped)):
@@ -128,14 +138,18 @@ class VolkswagenAppDriver:
                 raise CompanionTransportError(f"Volkswagen app: {reason} is mostly clipped; no tap sent")
         # A layout transition between locating and tapping must not send a tap
         # to whatever happens to occupy the old coordinates.
-        current = await self._nodes()
+        current = (
+            parse_ui_dump(await self._t.dump_active_ui())
+            if active_window
+            else await self._nodes()
+        )
         if validate_screen is not None and not validate_screen(current):
             raise CompanionTransportError(f"Volkswagen app: screen verification failed before {reason}; no tap sent")
         if not any(
             n.enabled and n.bounds == node.bounds and n.visible_bounds == node.visible_bounds
             and (n.resource_id, n.text, n.content_desc, n.clazz, n.checkable, n.checked)
             == (node.resource_id, node.text, node.content_desc, node.clazz, node.checkable, node.checked)
-            and n.package in {"", "com.volkswagen.weconnect"}
+            and n.package in packages
             for n in current
         ):
             raise CompanionTransportError(f"Volkswagen app: layout changed before {reason}; no tap sent")
@@ -152,6 +166,13 @@ class VolkswagenAppDriver:
         await self._tap(find_by_text(nodes, pattern), reason=f"text {pattern}")
 
     @staticmethod
+    def _is_synchronising(nodes: list[UiNode]) -> bool:
+        return any(
+            re.search(r"Currently synchronising", node.content_desc or node.text)
+            for node in nodes
+        )
+
+    @staticmethod
     def _has_charge_limit_notice(nodes: list[UiNode]) -> bool:
         return any(
             re.search(r"You have increased the target charge level", node.text or node.content_desc)
@@ -161,14 +182,55 @@ class VolkswagenAppDriver:
     async def _dismiss_charge_limit_notice(self, nodes: list[UiNode]) -> list[UiNode]:
         if self._has_charge_limit_notice(nodes):
             # Only acknowledge the identified Battery Care information sheet.
-            # Never click a generic confirmation on an unknown dialog.
-            await self._tap_text(nodes, r"^Got it$")
+            # Never click a generic confirmation on an unknown dialog. The
+            # Compose button exposes "Got it" as content-desc, not text.
+            await self._tap(find_by_label(nodes, r"^Got it$"), reason="Battery Care notice Got it")
             return await self._wait_for_nodes(
                 lambda current: not self._has_charge_limit_notice(current)
                 and parse_vehicle_settings(current).get("target_soc") is not None,
                 reason="charge-limit settings after Battery Care notice",
+                timeout_s=10.0,
             )
         return nodes
+
+    @staticmethod
+    def _play_update_dismiss(nodes: list[UiNode]) -> UiNode | None:
+        """The close (X) control of Google Play's "Update available" sheet.
+
+        Only a window that belongs entirely to Google Play and is identified
+        as the update sheet qualifies; "Update" itself is never tapped.
+        """
+        if not nodes or not any(n.package == _PLAY_PACKAGE for n in nodes):
+            return None
+        if any(n.package not in {"", _PLAY_PACKAGE} for n in nodes):
+            return None
+        if find_by_desc(nodes, r"^\s*Update available") is None:
+            return None
+        dismiss = find_by_desc(nodes, r"^Dismiss update dialog$")
+        return dismiss if dismiss is not None and dismiss.clickable else None
+
+    async def _dismiss_play_update_sheet(self) -> bool:
+        """Close a Google Play update sheet covering the VW app, if present."""
+        try:
+            nodes = parse_ui_dump(await self._t.dump_active_ui())
+        except CompanionAutomationPaused:
+            raise
+        except CompanionTransportError:
+            return False
+        dismiss = self._play_update_dismiss(nodes)
+        if dismiss is None:
+            return False
+        _LOGGER.info("Companion: closing the Google Play update sheet over the Volkswagen app")
+        await self._tap(
+            dismiss, reason="Google Play update sheet close",
+            packages=frozenset({"", _PLAY_PACKAGE}), active_window=True,
+        )
+        await self._wait_for_nodes(
+            lambda current: self._play_update_dismiss(current) is None,
+            reason="Google Play update sheet to close",
+            active_window=True,
+        )
+        return True
 
     @staticmethod
     def _safe_navigation_node(nodes: list[UiNode]) -> UiNode | None:
@@ -181,6 +243,12 @@ class VolkswagenAppDriver:
             node = find_by_rid(nodes, resource_id)
             if node is not None and node.tap_point is not None:
                 return node
+        # Bottom sheets (e.g. the range/charging detail) expose their X only
+        # as content-desc "Close" next to a "Close sheet" scrim.
+        if find_by_desc(nodes, r"^Close sheet$") is not None:
+            close = find_by_desc(nodes, r"^Close$")
+            if close is not None and close.tap_point is not None:
+                return close
         return zones_navigation_node(nodes)
 
     async def ensure_overview(self) -> list[UiNode]:
@@ -188,15 +256,25 @@ class VolkswagenAppDriver:
         for _ in range(12):
             if (
                 not self._foregrounded
-                or not await self._t.is_foreground("com.volkswagen.weconnect")
+                or not await self._t.is_foreground(_VW_PACKAGE)
             ):
-                await self._t.foreground_app("com.volkswagen.weconnect")
+                if await self._dismiss_play_update_sheet():
+                    continue
+                await self._t.foreground_app(_VW_PACKAGE)
                 self._foregrounded = True
                 # Foreground becomes true while the splash/Compose tree may
                 # still be empty. Do not interpret that loading window as a
                 # nested screen and immediately BACK out of the app.
                 await self._settle()
-            nodes = await self._nodes()
+            try:
+                nodes = await self._nodes()
+            except CompanionAutomationPaused:
+                raise
+            except CompanionTransportError:
+                # The update sheet may pop up right after (re)launching.
+                if await self._dismiss_play_update_sheet():
+                    continue
+                raise
             if self._has_charge_limit_notice(nodes):
                 await self._dismiss_charge_limit_notice(nodes)
                 continue
@@ -444,7 +522,26 @@ class VolkswagenAppDriver:
     async def _charging_action(self, label: str) -> None:
         nodes = await self.ensure_overview()
         await self._tap_rid(nodes, "rangeTile")
-        detail = await self._nodes()
+        try:
+            await self._charging_action_on_sheet(label)
+        except CompanionAutomationPaused:
+            raise
+        except CompanionTransportError:
+            # Never leave the range sheet open after a failure: ensure_overview
+            # of every later command would otherwise start from it.
+            try:
+                await self.ensure_overview()
+            except CompanionTransportError:
+                pass
+            raise
+        await self.ensure_overview()
+
+    async def _charging_action_on_sheet(self, label: str) -> None:
+        # The sheet slides in; reading it immediately missed the button.
+        detail = await self._wait_for_nodes(
+            lambda current: find_by_desc(current, r"^(?:Start|Stop) charging\b") is not None,
+            reason="charging button on the range sheet",
+        )
         button = find_by_desc(detail, rf"^{re.escape(label)}")
         if button is None and label == "Start charging":
             # The app keeps the charging request enabled after the target is
@@ -455,7 +552,6 @@ class VolkswagenAppDriver:
                 r"^Stop charging\..*Target charge level reached",
             )
             if already_enabled is not None:
-                await self.ensure_overview()
                 return
         if button is None and label == "Stop charging":
             already_stopped = find_by_desc(
@@ -463,10 +559,8 @@ class VolkswagenAppDriver:
                 r"^Start charging\..*(?:not charging|not connected)",
             )
             if already_stopped is not None:
-                await self.ensure_overview()
                 return
         await self._tap(button, reason=f"{label} button")
-        await self.ensure_overview()
 
     async def start_charging(self) -> None:
         await self._charging_action("Start charging")
@@ -696,7 +790,20 @@ class VolkswagenAppDriver:
             lambda current_nodes: find_by_rid(current_nodes, "rangeTile") is not None
             and find_by_rid(current_nodes, "climateTile") is not None,
             reason="overview after saving charge limit",
+            # The overview's charging status is a marquee whose bounds change
+            # on every frame, so it never looks "stable". Reopening the
+            # settings below verifies the saved value anyway.
+            require_stable=False,
             timeout_s=15.0,
+        )
+        # Saving starts a vehicle sync (spinner next to the vehicle name).
+        # Settings reopened before it finishes still show the old limit.
+        await self._wait_for_nodes(
+            lambda current_nodes: find_by_rid(current_nodes, "rangeTile") is not None
+            and not self._is_synchronising(current_nodes),
+            reason="vehicle sync after saving charge limit",
+            require_stable=False,
+            timeout_s=90.0,
         )
         saved = await self._open_vehicle_settings()
         actual = parse_vehicle_settings(saved).get("target_soc")

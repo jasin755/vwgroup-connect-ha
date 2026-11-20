@@ -40,6 +40,19 @@ def find_by_text(nodes: list[UiNode], pattern: str) -> UiNode | None:
     return _unique_visible([n for n in nodes if n.text and rx.search(n.text)])
 
 
+def find_by_label(nodes: list[UiNode], pattern: str) -> UiNode | None:
+    """Match text or content-description.
+
+    Compose buttons often expose their caption only as a content-description
+    (e.g. the Battery Care sheet's "Got it"), View buttons only as text.
+    """
+    rx = re.compile(pattern, re.I)
+    return _unique_visible([
+        n for n in nodes
+        if (n.text and rx.search(n.text)) or (n.content_desc and rx.search(n.content_desc))
+    ])
+
+
 def zones_navigation_node(nodes: list[UiNode]) -> UiNode | None:
     """An ID-less Zones back button is a sibling of the Zones toolbar title.
 
